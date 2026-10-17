@@ -55,45 +55,34 @@ const DEFAULT_CATEGORY_KEYS = [
 /**
  * The default payment methods, in display order.
  *
- * A generic term - "Credit Card", "Bank Transfer", "Direct Debit", "Money" -
- * reads differently to a German and to an English speaker, so it carries a
- * translation "key". A brand is the same word in every language, so it keeps a
- * literal "name".
+ * [CN-PATCH 2] 国内使用场景：这张表决定「设置 → 支付方式」的初始列表，
+ * 也决定订阅表单里支付方式下拉框的顺序。
+ *
+ * 上游默认是欧洲/北美方案（PayPal、SEPA、Klarna、GiroPay、iDeal…），
+ * 国内用户基本用不上。这里改成以支付宝/微信/银联/银行卡/花呗/白条为主，
+ * 海外那几个（PayPal / Apple Pay / Google Pay）放在最后保留，
+ * 因为港区 Netflix、美区 ChatGPT 这类订阅仍然需要。
+ *
+ * 注意：没有对应图标的条目复用最接近的内置图标，
+ * 否则设置页会显示裂图。图标名对应 images/uploads/icons/ 下的文件。
  *
  * @var array<int, array{name?: string, key?: string, icon: string}>
  */
 const DEFAULT_PAYMENT_METHODS = [
-    ['name' => 'PayPal', 'icon' => 'images/uploads/icons/paypal.png'],
+    ['name' => '支付宝', 'icon' => 'images/uploads/icons/alipay.png'],
+    ['name' => '微信支付', 'icon' => 'images/uploads/icons/wechat.png'],
+    ['name' => '银联云闪付', 'icon' => 'images/uploads/icons/unionpay.png'],
     ['key' => 'payment_method_credit_card', 'icon' => 'images/uploads/icons/creditcard.png'],
     ['key' => 'payment_method_bank_transfer', 'icon' => 'images/uploads/icons/banktransfer.png'],
+    ['name' => '花呗', 'icon' => 'images/uploads/icons/alipay.png'],
+    ['name' => '京东白条', 'icon' => 'images/uploads/icons/creditcard.png'],
+    ['name' => '虚拟信用卡', 'icon' => 'images/uploads/icons/creditcard.png'],
     ['key' => 'payment_method_direct_debit', 'icon' => 'images/uploads/icons/directdebit.png'],
     ['key' => 'payment_method_money', 'icon' => 'images/uploads/icons/money.png'],
-    ['name' => 'Google Pay', 'icon' => 'images/uploads/icons/googlepay.png'],
-    ['name' => 'Samsung Pay', 'icon' => 'images/uploads/icons/samsungpay.png'],
+    // 海外订阅仍可能用到，保留在列表末尾
+    ['name' => 'PayPal', 'icon' => 'images/uploads/icons/paypal.png'],
     ['name' => 'Apple Pay', 'icon' => 'images/uploads/icons/applepay.png'],
-    ['name' => 'Crypto', 'icon' => 'images/uploads/icons/crypto.png'],
-    ['name' => 'Klarna', 'icon' => 'images/uploads/icons/klarna.png'],
-    ['name' => 'Amazon Pay', 'icon' => 'images/uploads/icons/amazonpay.png'],
-    ['name' => 'SEPA', 'icon' => 'images/uploads/icons/sepa.png'],
-    ['name' => 'Skrill', 'icon' => 'images/uploads/icons/skrill.png'],
-    ['name' => 'Sofort', 'icon' => 'images/uploads/icons/sofort.png'],
-    ['name' => 'Stripe', 'icon' => 'images/uploads/icons/stripe.png'],
-    ['name' => 'Affirm', 'icon' => 'images/uploads/icons/affirm.png'],
-    ['name' => 'AliPay', 'icon' => 'images/uploads/icons/alipay.png'],
-    ['name' => 'Elo', 'icon' => 'images/uploads/icons/elo.png'],
-    ['name' => 'Facebook Pay', 'icon' => 'images/uploads/icons/facebookpay.png'],
-    ['name' => 'GiroPay', 'icon' => 'images/uploads/icons/giropay.png'],
-    ['name' => 'iDeal', 'icon' => 'images/uploads/icons/ideal.png'],
-    ['name' => 'Union Pay', 'icon' => 'images/uploads/icons/unionpay.png'],
-    ['name' => 'Interac', 'icon' => 'images/uploads/icons/interac.png'],
-    ['name' => 'WeChat', 'icon' => 'images/uploads/icons/wechat.png'],
-    ['name' => 'Paysafe', 'icon' => 'images/uploads/icons/paysafe.png'],
-    ['name' => 'Poli', 'icon' => 'images/uploads/icons/poli.png'],
-    ['name' => 'Qiwi', 'icon' => 'images/uploads/icons/qiwi.png'],
-    ['name' => 'ShopPay', 'icon' => 'images/uploads/icons/shoppay.png'],
-    ['name' => 'Venmo', 'icon' => 'images/uploads/icons/venmo.png'],
-    ['name' => 'VeriFone', 'icon' => 'images/uploads/icons/verifone.png'],
-    ['name' => 'WebMoney', 'icon' => 'images/uploads/icons/webmoney.png'],
+    ['name' => 'Google Pay', 'icon' => 'images/uploads/icons/googlepay.png'],
 ];
 
 /**

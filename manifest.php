@@ -22,7 +22,7 @@ $themeColor = $theme === 'light' ? '#FFFFFF' : '#12151C';
 
 $manifest = [
     'short_name' => 'Wallos',
-    'name' => 'Wallos - Subscription Tracker',
+    'name' => '订阅台账 · SubDesk',
     'icons' => [
         [
             'src' => 'images/icon/android-chrome-192x192.png',
@@ -122,7 +122,7 @@ $manifest = [
     'display' => 'standalone',
     'scope' => '/',
     'theme_color' => $themeColor,
-    'description' => 'Wallos is a personal subscription tracker that helps you keep track of your subscriptions and save money.',
+    'description' => '个人订阅台账，集中管理会员与周期性付费，到期前提醒，避免忘记取消。',
     'orientation' => 'portrait-primary',
     'display_override' => ['window-controls-overlay'],
 ];

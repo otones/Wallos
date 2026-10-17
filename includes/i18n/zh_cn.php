@@ -8,6 +8,26 @@ $i18n = [
     "email" => "电子邮箱",
     "firstname" => "名",
     "lastname" => "姓",
+    // [CN-PATCH 5] 姓/名合并后的新标签。firstname/lastname 两个键保留不动，
+    // 因为上游别处（如家庭成员、通知模板）可能仍在使用。
+    "nickname" => "昵称",
+    "nickname_placeholder" => "用于首页问候，可留空",
+
+    // [CN-PATCH 6] 货币显示名。上游 currencies 表里存的是英文全名
+    // （"Chinese Yuan" / "US Dollar"），下拉框直接显示这张表的内容，
+    // 国内用户要在里面找「人民币」得先认出英文。这里改成中文短名，
+    // key 是 currency_ + 小写 ISO 代码；表里没有对应键时回退英文原名。
+    "currency_cny" => "人民币",
+    "currency_usd" => "美元",
+    "currency_eur" => "欧元",
+    "currency_hkd" => "港币",
+    "currency_jpy" => "日元",
+    "currency_gbp" => "英镑",
+    "currency_twd" => "新台币",
+    "currency_sgd" => "新加坡元",
+    "currency_krw" => "韩元",
+    "currency_aud" => "澳元",
+    "currency_cad" => "加元",
     "confirm_password" => "确认密码",
     "main_currency" => "主要货币",
     "language" => "语言",
@@ -531,6 +551,37 @@ $i18n = [
     "google_search_info" => "将Google图片结果（通过SerpAPI）添加为Logo搜索的额外来源。创建免费的SerpAPI账户并在此粘贴您的API密钥。",
     "monthly_searches_used" => "本月已用搜索次数",
     "monthly_requests_used" => "本月已用API请求数",
+
+    // [CN-PATCH 1] 补齐缺失的报错文案。上游 zh_cn.php 比 en.php 少这 2 个键，
+    // translate() 缺键时会静默回退英文，所以这两条会显示英文原文。
+    "totp_too_many_attempts" => "验证码错误次数过多，请稍后再试。",
+    "error_saving_logo" => "保存 Logo 图片失败。",
+
+    // [CN-PATCH 1b] 默认分类。上游 zh_cn.php 完全没有这 16 个键，
+    // 导致新账号建号时分类全部落回英文（default_names_translations 用 en.php 兜底）。
+    // 名字与 includes/default_names.php 的 DEFAULT_CATEGORY_KEYS 一一对应。
+    "category_entertainment" => "影音娱乐",
+    "category_music" => "音乐",
+    "category_utilities" => "生活缴费",
+    "category_food_and_beverages" => "餐饮",
+    "category_health_and_wellbeing" => "健康",
+    "category_productivity" => "效率工具",
+    "category_banking" => "银行金融",
+    "category_transport" => "交通出行",
+    "category_education" => "教育学习",
+    "category_insurance" => "保险",
+    "category_gaming" => "游戏",
+    "category_news_and_magazines" => "资讯阅读",
+    "category_software" => "软件订阅",
+    "category_technology" => "数码科技",
+    "category_cloud_services" => "云服务与存储",
+    "category_charity_and_donations" => "公益捐赠",
+
+    // [CN-PATCH 1c] 默认支付方式里的通用词。品牌名（PayPal、Stripe）不翻译。
+    "payment_method_credit_card" => "信用卡",
+    "payment_method_bank_transfer" => "银行转账",
+    "payment_method_direct_debit" => "自动扣款",
+    "payment_method_money" => "现金 / 其他",
 ];
 
 ?>

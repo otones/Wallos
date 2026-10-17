@@ -120,8 +120,10 @@ $registrationFailed = false;
 $hasErrors = false;
 if (isset($_POST['username'])) {
     $username = validate($_POST['username']);
-    $firstname = validate($_POST['firstname']);
-    $lastname = validate($_POST['lastname']);
+    // [CN-PATCH 5] 表单已改为单个「昵称」字段。这里做兼容：
+    // 新表单提交 nickname，旧表单/API 调用仍可能提交 firstname/lastname。
+    $firstname = validate($_POST['nickname'] ?? ($_POST['firstname'] ?? ''));
+    $lastname = '';
     $email = validate($_POST['email']);
     $password = $_POST['password'];
     $confirm_password = $_POST['confirm_password'];
@@ -210,10 +212,19 @@ if (isset($_POST['username'])) {
                 }
 
                 // Add currencies for that user
+                //
+                // [CN-PATCH 6] 写入数据库时就存中文名，而不是等界面翻译。
+                // 原因是「设置 → 货币」页把 name 当普通文本编辑框直接展示，
+                // 如果表里存 "Chinese Yuan"，用户在那里看到的仍是英文。
+                // 这里在注册期做一次性映射，之后 name 就是用户可自由编辑的普通字段。
                 $query = "INSERT INTO currencies (name, symbol, code, rate, user_id) VALUES (:name, :symbol, :code, :rate, :user_id)";
                 $stmt = $db->prepare($query);
                 foreach ($currencies as $currency) {
-                    $stmt->bindValue(':name', $currency['name'], SQLITE3_TEXT);
+                    $localizedName = translate('currency_' . strtolower($currency['code']), $i18n);
+                    if ($localizedName === '[i18n String Missing]') {
+                        $localizedName = $currency['name'];
+                    }
+                    $stmt->bindValue(':name', $localizedName, SQLITE3_TEXT);
                     $stmt->bindValue(':symbol', $currency['symbol'], SQLITE3_TEXT);
                     $stmt->bindValue(':code', $currency['code'], SQLITE3_TEXT);
                     $stmt->bindValue(':rate', 1, SQLITE3_FLOAT);
@@ -286,7 +297,7 @@ if (isset($_POST['username'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="<?= $theme == "light" ? "#FFFFFF" : "#12151C" ?>" id="theme-color" />
     <meta name="apple-mobile-web-app-title" content="Wallos">
-    <title>Wallos - Subscription Tracker</title>
+    <title>订阅台账 · SubDesk</title>
     <link rel="icon" type="image/png" href="images/icon/favicon.ico" sizes="16x16">
     <link rel="apple-touch-icon" href="images/icon/apple-touch-icon.png">
     <link rel="apple-touch-icon" sizes="152x152" href="images/icon/apple-touch-icon-152.png">
@@ -324,11 +335,11 @@ if (isset($_POST['username'])) {
                 <h1><?= translate('auth_tagline', $i18n) ?></h1>
                 <p><?= translate('auth_tagline_sub', $i18n) ?></p>
             </div>
-            <div class="auth-brand-footer">Wallos &mdash; Subscription Tracker</div>
+            <div class="auth-brand-footer">订阅台账 &mdash; 会员与订阅管理</div>
         </aside>
         <section class="container wide">
             <header>
-                <div class="logo-image" title="Wallos - Subscription Tracker">
+                <div class="logo-image" title="订阅台账 · SubDesk">
                     <?php include "images/siteicons/svg/logo.php"; ?>
                 </div>
                 <p>
@@ -340,13 +351,23 @@ if (isset($_POST['username'])) {
                     <label for="username"><?= translate('username', $i18n) ?>:</label>
                     <input type="text" id="username" name="username" autocomplete="username" required>
                 </div>
+                <?php
+                // [CN-PATCH 5] 去掉独立的「姓 / 名」两个字段，合并为一个「昵称」。
+                //
+                // 上游把 firstname / lastname 分开，是欧美命名习惯（Given name /
+                // Family name）。中文场景下这两个词的对应关系本身就是错的
+                // （"first name" 译成「名」、"last name」译成「姓」，但表单顺序是
+                // 名在前姓在后，和中文习惯相反），而且大部分用户根本没有英文姓名的概念。
+                //
+                // 这里保留数据库两列不迁移（零风险），只改表单：
+                // 昵称写入 firstname，lastname 恒为空字符串。
+                // index.php 的问候语是 $user['firstname'] ?? $user['username']，
+                // 所以填了昵称就显示昵称，没填就回退用户名，不会出现空白。
+                ?>
                 <div class="form-group">
-                    <label for="firstname"><?= translate('firstname', $i18n) ?>:</label>
-                    <input type="text" id="firstname" name="firstname" autocomplete="given-name">
-                </div>
-                <div class="form-group">
-                    <label for="lastname"><?= translate('lastname', $i18n) ?>:</label>
-                    <input type="text" id="lastname" name="lastname" autocomplete="family-name">
+                    <label for="nickname"><?= translate('nickname', $i18n) ?>:</label>
+                    <input type="text" id="nickname" name="nickname" autocomplete="nickname"
+                        placeholder="<?= translate('nickname_placeholder', $i18n) ?>">
                 </div>
                 <div class="form-group">
                     <label for="email"><?= translate('email', $i18n) ?>:</label>
@@ -364,9 +385,18 @@ if (isset($_POST['username'])) {
                     <label for="currency"><?= translate('main_currency', $i18n) ?>:</label>
                     <select id="currency" name="main_currency" placeholder="Currency">
                         <?php
+                        // [CN-PATCH 6] 默认选中人民币。上游这里没有任何 option 带
+                        // selected，浏览器就选第一个（Euro），新用户很容易漏改，
+                        // 之后所有统计都按欧元折算。
                         foreach ($currencies as $currency) {
+                            $currencySelected = ($currency['code'] === 'CNY') ? 'selected' : '';
                             ?>
-                            <option value="<?= $currency['code'] ?>"><?= $currency['name'] ?></option>
+                            <option value="<?= $currency['code'] ?>" <?= $currencySelected ?>>
+                                <?= translate('currency_' . strtolower($currency['code']), $i18n) !== '[i18n String Missing]'
+                                    ? translate('currency_' . strtolower($currency['code']), $i18n)
+                                    : $currency['name'] ?>
+                                (<?= $currency['code'] ?>)
+                            </option>
                             <?php
                         }
                         ?>

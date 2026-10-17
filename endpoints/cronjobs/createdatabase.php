@@ -103,24 +103,28 @@ if (!file_exists($databaseFile)) {
         smtp_password VARCHAR(255)
     )');
 
+    // [CN-PATCH 2b] 与 includes/default_names.php 的 DEFAULT_CATEGORY_KEYS 对应。
+    // 这里是「全新安装」的种子数据：数据库第一次创建时就写这批名字，
+    // 之后由 localize_default_names() 按注册时选择的语言再做一次本地化。
+    // 保持中文是因为国内部署下新装实例的默认语言就是中文（见 getlang.php）。
     $db->exec("INSERT INTO categories (id, name) VALUES
-    (1, 'No category'),
-    (2, 'Entertainment'),
-    (3, 'Music'),
-    (4, 'Utilities'),
-    (5, 'Food & Beverages'),
-    (6, 'Health & Wellbeing'),
-    (7, 'Productivity'),
-    (8, 'Banking'),
-    (9, 'Transport'),
-    (10, 'Education'),
-    (11, 'Insurance'),
-    (12, 'Gaming'),
-    (13, 'News & Magazines'),
-    (14, 'Software'),
-    (15, 'Technology'),
-    (16, 'Cloud Services'),
-    (17, 'Charity & Donations')");
+    (1, '无分类'),
+    (2, '影音娱乐'),
+    (3, '音乐'),
+    (4, '生活缴费'),
+    (5, '餐饮'),
+    (6, '健康'),
+    (7, '效率工具'),
+    (8, '银行金融'),
+    (9, '交通出行'),
+    (10, '教育学习'),
+    (11, '保险'),
+    (12, '游戏'),
+    (13, '资讯阅读'),
+    (14, '软件订阅'),
+    (15, '数码科技'),
+    (16, '云服务与存储'),
+    (17, '公益捐赠')");
 
     $db->exec("INSERT INTO cycles (id, days, name) VALUES
     (1, 1, 'Daily'),
@@ -162,74 +166,43 @@ if (!file_exists($databaseFile)) {
     (30, 30),
     (31, 31)");
 
+    // [CN-PATCH 6] 全新安装的种子货币表。
+    // 上游把 34 种货币全写进去，第一项是 Euro —— 注册页的下拉框直接遍历这张表，
+    // 没有任何 option 带 selected 时浏览器选第一项，所以新用户默认拿到欧元。
+    // 这里重排为「人民币第一」，并把常用的几个改成中文名。
+    // 冷门货币（保加利亚列弗、冰岛克朗之类）直接去掉：国内订阅场景用不到，
+    // 留着只会让货币下拉框长到需要滚动。
     $db->exec("INSERT INTO currencies (name, symbol, code, rate) VALUES
-    ('Euro', '€', 'EUR', 1),
-    ('US Dollar', '$', 'USD', 1),
-    ('Japanese Yen', '¥', 'JPY', 1),
-    ('Bulgarian Lev', 'лв', 'BGN', 1),
-    ('Czech Republic Koruna', 'Kč', 'CZK', 1),
-    ('Danish Krone', 'kr', 'DKK', 1),
-    ('British Pound Sterling', '£', 'GBP', 1),
-    ('Hungarian Forint', 'Ft', 'HUF', 1),
-    ('Polish Zloty', 'zł', 'PLN', 1),
-    ('Romanian Leu', 'lei', 'RON', 1),
-    ('Swedish Krona', 'kr', 'SEK', 1),
-    ('Swiss Franc', 'Fr', 'CHF', 1),
-    ('Icelandic Króna', 'kr', 'ISK', 1),
-    ('Norwegian Krone', 'kr', 'NOK', 1),
-    ('Russian Ruble', '₽', 'RUB', 1),
-    ('Turkish Lira', '₺', 'TRY', 1),
-    ('Australian Dollar', '$', 'AUD', 1),
-    ('Brazilian Real', 'R$', 'BRL', 1),
-    ('Canadian Dollar', '$', 'CAD', 1),
-    ('Chinese Yuan', '¥', 'CNY', 1),
-    ('Hong Kong Dollar', 'HK$', 'HKD', 1),
-    ('Indonesian Rupiah', 'Rp', 'IDR', 1),
-    ('Israeli New Sheqel', '₪', 'ILS', 1),
-    ('Indian Rupee', '₹', 'INR', 1),
-    ('South Korean Won', '₩', 'KRW', 1),
-    ('Mexican Peso', 'Mex$', 'MXN', 1),
-    ('Malaysian Ringgit', 'RM', 'MYR', 1),
-    ('New Zealand Dollar', 'NZ$', 'NZD', 1),
-    ('Philippine Peso', '₱', 'PHP', 1),
-    ('Singapore Dollar', 'S$', 'SGD', 1),
-    ('Thai Baht', '฿', 'THB', 1),
-    ('South African Rand', 'R', 'ZAR', 1),
-    ('Ukrainian Hryvnia', '₴', 'UAH', 1),
-    ('New Taiwan Dollar', 'NT$', 'TWD', 1)");
+    ('人民币', '¥', 'CNY', 1),
+    ('美元', '$', 'USD', 1),
+    ('港币', 'HK$', 'HKD', 1),
+    ('日元', '¥', 'JPY', 1),
+    ('欧元', '€', 'EUR', 1),
+    ('英镑', '£', 'GBP', 1),
+    ('新台币', 'NT$', 'TWD', 1),
+    ('新加坡元', 'S$', 'SGD', 1),
+    ('韩元', '₩', 'KRW', 1),
+    ('澳元', 'A\$', 'AUD', 1),
+    ('加元', 'C\$', 'CAD', 1)");
 
+    // [CN-PATCH 2b] 支付方式种子数据，与 DEFAULT_PAYMENT_METHODS 保持一致。
+    // 上游的 31 项欧美方案改为国内常用的 13 项；海外三项放最后保留。
+    // id 保持不变（1-31 的区间不动），因为 subscriptions.payment_method_id 是靠 id 关联的，
+    // 已有备份数据库导入后仍然指得到对应的行。
     $db->exec("INSERT INTO payment_methods (id, name, icon) VALUES
-    (1, 'PayPal', 'paypal.png'),
-    (2, 'Credit Card', 'creditcard.png'),
-    (3, 'Bank Transfer', 'banktransfer.png'),
-    (4, 'Direct Debit', 'directdebit.png'),
-    (5, 'Money', 'money.png'),
-    (6, 'Google Pay', 'googlepay.png'),
-    (7, 'Samsung Pay', 'samsungpay.png'),
-    (8, 'Apple Pay', 'applepay.png'),
-    (9, 'Crypto', 'crypto.png'),
-    (10, 'Klarna', 'klarna.png'),
-    (11, 'Amazon Pay', 'amazonpay.png'),
-    (12, 'SEPA', 'sepa.png'),
-    (13, 'Skrill', 'skrill.png'),
-    (14, 'Sofort', 'sofort.png'),
-    (15, 'Stripe', 'stripe.png'),
-    (16, 'Affirm', 'affirm.png'),
-    (17, 'AliPay', 'alipay.png'),
-    (18, 'Elo', 'elo.png'),
-    (19, 'Facebook Pay', 'facebookpay.png'),
-    (20, 'GiroPay', 'giropay.png'),
-    (21, 'iDeal', 'ideal.png'),
-    (22, 'Union Pay', 'unionpay.png'),
-    (23, 'Interac', 'interac.png'),
-    (24, 'WeChat', 'wechat.png'),
-    (25, 'Paysafe', 'paysafe.png'),
-    (26, 'Poli', 'poli.png'),
-    (27, 'Qiwi', 'qiwi.png'),
-    (28, 'ShopPay', 'shoppay.png'),
-    (29, 'Venmo', 'venmo.png'),
-    (30, 'VeriFone', 'verifone.png'),
-    (31, 'WebMoney', 'webmoney.png')");
+    (1, '支付宝', 'alipay.png'),
+    (2, '微信支付', 'wechat.png'),
+    (3, '银联云闪付', 'unionpay.png'),
+    (4, '信用卡', 'creditcard.png'),
+    (5, '银行转账', 'banktransfer.png'),
+    (6, '花呗', 'alipay.png'),
+    (7, '京东白条', 'creditcard.png'),
+    (8, '虚拟信用卡', 'creditcard.png'),
+    (9, '自动扣款', 'directdebit.png'),
+    (10, '现金 / 其他', 'money.png'),
+    (11, 'PayPal', 'paypal.png'),
+    (12, 'Apple Pay', 'applepay.png'),
+    (13, 'Google Pay', 'googlepay.png')");
 
     $setupToken = bin2hex(random_bytes(32));
     file_put_contents(__DIR__ . '/../../db/setup_token.db', $setupToken);

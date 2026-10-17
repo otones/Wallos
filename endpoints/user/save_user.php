@@ -219,16 +219,20 @@ function resizeAndUploadAvatar($uploadedFile, $uploadDir, $name)
 
 if (
     isset($_SESSION['username']) 
-    && isset($_POST['firstname'])
-    && isset($_POST['lastname'])
+    // [CN-PATCH 5] 姓/名合并为「昵称」。这里放宽守卫：
+    // 新表单只提交 nickname，不再提交 firstname/lastname。
+    // 用户清空昵称时也要能保存（空字符串是合法值），所以用 array_key_exists
+    // 而不是 isset —— isset 对 '' 返回 true，但对「字段不存在」返回 false，
+    // 两者语义在这里必须区分开，否则清空昵称会被静默忽略。
+    && array_key_exists('nickname', $_POST)
     && isset($_POST['email']) && $_POST['email'] !== ""
     && isset($_POST['avatar']) && $_POST['avatar'] !== ""
     && isset($_POST['main_currency']) && $_POST['main_currency'] !== ""
     && isset($_POST['language']) && $_POST['language'] !== ""
 ) {
 
-    $firstname = validate($_POST['firstname']);
-    $lastname = validate($_POST['lastname']);
+    $firstname = validate($_POST['nickname']);
+    $lastname = '';
     $email = validate($_POST['email']);
 
     $query = "SELECT email FROM user WHERE id = :user_id";

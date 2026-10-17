@@ -17,8 +17,8 @@ function storeFormFieldValue(fieldId) {
 
 function storeFormFields() {
   storeFormFieldValue('username');
-  storeFormFieldValue('firstname');
-  storeFormFieldValue('lastname');
+  // [CN-PATCH 5] firstname/lastname 已合并为 nickname
+  storeFormFieldValue('nickname');
   storeFormFieldValue('email');
   storeFormFieldValue('password');
   storeFormFieldValue('confirm_password');
@@ -27,15 +27,17 @@ function storeFormFields() {
 
 function restoreFormFieldValue(fieldId) {
   var fieldElement = document.getElementById(fieldId);
-  if (localStorage.getItem(fieldId)) {
+  // [CN-PATCH 5] 缺字段保护。上游这里直接 fieldElement.value，
+  // 字段从表单移除后 localStorage 里若还留着旧值会抛 TypeError，
+  // 导致 window.onload 整段中断（主题初始化也跟着失效）。
+  if (fieldElement && localStorage.getItem(fieldId)) {
     fieldElement.value = localStorage.getItem(fieldId) || '';
   }
 }
 
 function restoreFormFields() {
   restoreFormFieldValue('username');
-  restoreFormFieldValue('firstname');
-  restoreFormFieldValue('lastname');
+  restoreFormFieldValue('nickname');
   restoreFormFieldValue('email');
   restoreFormFieldValue('password');
   restoreFormFieldValue('confirm_password');
@@ -44,6 +46,7 @@ function restoreFormFields() {
 
 function removeFromStorage() {
   localStorage.removeItem('username');
+  localStorage.removeItem('nickname');
   localStorage.removeItem('firstname');
   localStorage.removeItem('lastname');
   localStorage.removeItem('email');

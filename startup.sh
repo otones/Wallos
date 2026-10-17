@@ -66,6 +66,11 @@ sleep 1
 # Perform any database migrations
 /usr/local/bin/php /var/www/html/endpoints/db/migrate.php
 
+# [CN-PATCH 8] 存量数据中文化：把仍然等于上游英文默认值的分类、支付方式、
+# 货币改名成中文，并停用国内用不到的支付渠道。
+# 幂等：只匹配「名字仍然精确等于英文默认值」的行，重复执行无副作用。
+/usr/local/bin/php /var/www/html/tools/cn-seed.php || echo "cn-seed skipped"
+
 # Change permissions on the database directory
 chmod -R 755 /var/www/html/db/
 chown -R www-data:www-data /var/www/html/db/

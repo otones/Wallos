@@ -48,10 +48,15 @@ function detailsFormatDate(dateString) {
   if (isNaN(date)) {
     return dateString;
   }
+  // [CN-PATCH 7] toLocaleDateString('zh_cn') 不是合法 BCP-47 标签
+  // （下划线应为连字符），部分浏览器会静默回退到系统区域，
+  // 中文部署下反而显示成 "Oct 17, 2026"。中文分支统一用 zh-CN。
+  const lang = window.lang || 'en';
+  const locale = /^zh/i.test(lang) ? 'zh-CN' : lang;
   try {
-    return date.toLocaleDateString(window.lang || 'en', { day: 'numeric', month: 'short', year: 'numeric' });
+    return date.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
   } catch (e) {
-    return date.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' });
+    return date.toLocaleDateString(/^zh/i.test(locale) ? 'zh-CN' : 'en', { day: 'numeric', month: 'short', year: 'numeric' });
   }
 }
 

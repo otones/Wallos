@@ -114,8 +114,18 @@ function formatDate($date, $lang = 'en')
     $currentYear = date('Y');
     $dateYear = date('Y', strtotime($date));
 
-    // Determine the date format based on whether the year matches the current year
-    $dateFormat = ($currentYear == $dateYear) ? 'MMM d' : 'MMM yyyy';
+    // [CN-PATCH 7] 中文日期格式。
+    //
+    // 上游固定用 ICU 的 'MMM d'（如 "Oct 17"）和 'MMM yyyy'（如 "Oct 2025"），
+    // 中文 locale 下会渲染成 "10月 17" 这种夹生格式。
+    // 这里对中文单独用更符合习惯的模式：当年显示 "10月17日"，跨年显示 "2025年10月"。
+    $isChinese = in_array(strtolower(substr((string) $lang, 0, 2)), ['zh'], true);
+
+    if ($isChinese) {
+        $dateFormat = ($currentYear == $dateYear) ? 'M月d日' : 'yyyy年M月';
+    } else {
+        $dateFormat = ($currentYear == $dateYear) ? 'MMM d' : 'MMM yyyy';
+    }
 
     // Try to create an IntlDateFormatter; if it fails, fallback to 'en'
     try {

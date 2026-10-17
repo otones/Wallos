@@ -32,8 +32,16 @@ function formatDate($date, $lang = 'en')
     $currentYear = date('Y');
     $dateYear = date('Y', strtotime($date));
 
-    // Determine the date format based on whether the year matches the current year
-    $dateFormat = ($currentYear == $dateYear) ? 'MMM d' : 'MMM yyyy';
+    // [CN-PATCH 7] 中文日期格式，详见 includes/list_subscriptions.php 同名函数。
+    // 这里是首页的副本，上游在两处重复实现了同一个函数，必须同步修改，
+    // 否则首页和订阅列表会显示两种不同的日期格式。
+    $isChinese = in_array(strtolower(substr((string) $lang, 0, 2)), ['zh'], true);
+
+    if ($isChinese) {
+        $dateFormat = ($currentYear == $dateYear) ? 'M月d日' : 'yyyy年M月';
+    } else {
+        $dateFormat = ($currentYear == $dateYear) ? 'MMM d' : 'MMM yyyy';
+    }
 
     // Try to create an IntlDateFormatter; if it fails, fallback to 'en'
     try {

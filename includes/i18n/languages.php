@@ -1,7 +1,11 @@
 <?php
 // File Name => Language Name
+//
+// [CN-PATCH 4] 简体中文提到列表首位。注册页的语言下拉框直接遍历这个数组，
+// 顺序即显示顺序；上游把 English 放第一位，国内部署下中文应当排第一，
+// 用户不必每次翻到最后才找到。
 $languages = [
-    // English first
+    "zh_cn" => ["name" => "简体中文", "dir" => "ltr"],
     "en" => ["name" => "English", "dir" => "ltr"],
     "ar" => ["name" => "العربية", "dir" => "rtl"],
     // Remaining sorted alphabetically by language code
@@ -30,7 +34,6 @@ $languages = [
     "tr" => ["name" => "Türkçe", "dir" => "ltr"],
     "uk" => ["name" => "Українська", "dir" => "ltr"],
     "vi" => ["name" => "Tiếng Việt", "dir" => "ltr"],
-    "zh_cn" => ["name" => "简体中文", "dir" => "ltr"],
     "zh_tw" => ["name" => "繁體中文", "dir" => "ltr"],
 ];
 
