@@ -23,5 +23,6 @@ registration.php
 scripts/registration.js
 scripts/subscription-details.js
 startup.sh
+styles/styles.css
 tools/cn-seed.php
 tools/fix-main-currency.php

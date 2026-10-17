@@ -30,6 +30,7 @@
 | CN-PATCH 13 | 构建期自检：漏覆盖即构建失败 | `docker/Dockerfile.cn`、`docker/expected-patches.txt`、`tools/gen-expected-patches.sh` | 构建 |
 | CN-PATCH 14 | **修复主货币 id 错位**（日历页 TypeError） | `includes/default_names.php`、`registration.php`、`endpoints/admin/adduser.php`、`includes/oidc/oidc_create_user.php`、`includes/list_subscriptions.php`、`tools/fix-main-currency.php` | 修复 |
 | CN-PATCH 15 | **右上角显示昵称**而非用户名 | `includes/header.php` | 修复 |
+| CN-PATCH 16 | **层级修正**：用户菜单被订阅表单遮挡 | `styles/styles.css` | 修复 |
 
 ---
 
@@ -455,8 +456,61 @@ if ($displayName === '') {
 
 ---
 
-### 货币表：四条路径的一致性验证
-上表四个入口，逐个验证结果（2026-10-17，`wallos-cn:5.8.3`）：
+### CN-PATCH 16 — 右上角用户菜单被订阅表单遮挡
+
+**症状**：打开「添加订阅」表单后，右上角的用户下拉菜单被压在表单下面，
+只从菜单右上角露出一窄条（截图里能看到「仪表盘」「订阅」「日历」等字被切掉）。
+
+**根因**：层叠上下文的传递。
+
+```
+body>header            z-index: 10   ← 创建层叠上下文
+  └ .dropdown-content      z-index: 5    （只在 header 内部比较）
+.subscription-form     z-index: 20   ← 全页范围，高于 header 的 10
+```
+
+`.dropdown-content` 的 5 是小问题，真正的问题是 **header 自己只有 10**。
+子元素的 z-index 无论多大都跳不出父级建立的层叠上下文 —— 所以调大那个 5
+完全没有用。
+
+**改法**：调整 header 自身，但要照顾两条约束：
+
+| 元素 | 原值 | 新值 | 理由 |
+|---|---|---|---|
+| `body>header` | 10 | **25** | 必须高于内容弹窗（20），低于全屏浮层 |
+| `.dropdown-content` | 5 | 5（不变） | 在 header 内部无竞争者，改它无意义 |
+| `.icon-search-backdrop` | 21 | **30** | 必须仍在 header 之上 |
+| `.icon-search` | 22 | **31** | 面板要盖在自身遮罩之上 |
+
+**为什么 header 要低于 30/31**：图标搜索是全屏取色/选图界面，
+它必须盖住页头，否则面板顶部会被 sticky header 切掉一条。
+如果只把 header 提到 100，图标搜索就反被压在下面了。
+
+**为什么 header 要高于 20**：右上角菜单是全局导航，任何内容弹窗打开时
+都应保持可点 —— 尤其「退出登录」，被弹窗挡住会逼用户先关弹窗才能退出。
+
+**层级约定表**（写在 `body>header` 上方的注释里，改任何浮层前先对照）：
+
+```
+ 20   内容型弹窗：.subscription-form / .subscription-modal /
+      .subscription-details / .totp-popup
+ 25   body>header（含右上角用户菜单）
+ 30   .icon-search-backdrop
+ 31   .icon-search
+ 99   .modal-backdrop（通用模态遮罩，含注册页的数据库恢复）
+```
+
+这个应用原本没有统一的层级体系，各处 z-index 是分散加的，
+所以把约定写成注释放在 header 上，是希望下次改动时能看到。
+
+**顺带修的构建遗漏**：`styles.css` 改了但没进 Dockerfile.cn 的 COPY 清单。
+`tools/gen-expected-patches.sh` 原来只扫 `*.php` 和 `*.js`，漏掉了 `*.css`，
+所以构建期自检也没报错。已补上 CSS 通配，期望清单从 19 项变 20 项。
+这正好说明了自检机制的局限：**它只能检查清单里的文件，清单本身漏了它也无能为力**。
+
+---
+
+### 货币表：四条路径的一致性验证上表四个入口，逐个验证结果（2026-10-17，`wallos-cn:5.8.3`）：
 
 | 路径 | 验证方式 | 结果 |
 |---|---|---|

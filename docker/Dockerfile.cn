@@ -67,6 +67,12 @@ COPY totp.php             /var/www/html/totp.php
 COPY verifyemail.php      /var/www/html/verifyemail.php
 COPY manifest.php         /var/www/html/manifest.php
 
+# ---- CN-PATCH 16：层叠层级修正 -------------------------------------------
+# 右上角用户菜单被「添加订阅」表单遮住：header 的 z-index 是 10，
+# 而 .subscription-form 是 20，整个 header 连菜单一起被压在下面。
+# 调整见 styles.css 里 body>header 上方的层级约定表。
+COPY styles/styles.css    /var/www/html/styles/styles.css
+
 # ---- CN-PATCH 8：存量数据迁移脚本（上游镜像里没有这个目录） -------------
 COPY tools/cn-seed.php              /var/www/html/tools/cn-seed.php
 # [CN-PATCH 14] 修复 user.main_currency 指向不存在的货币行

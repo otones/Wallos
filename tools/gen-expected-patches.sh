@@ -26,8 +26,11 @@ OUT=docker/expected-patches.txt
     echo ''
     # 只列会进镜像的源码。排除 libs/（上游第三方库）、tests/、
     # docker/（构建文件自身不需要进镜像）、以及本脚本自己。
+    #
+    # 包含 *.css：CN-PATCH 16 的层叠层级修正在 styles.css 里，
+    # 最初只扫 php/js，导致这个文件没被加入 COPY 清单也没被自检发现。
     {
-        grep -rl 'CN-PATCH' --include='*.php' --include='*.js' . 2>/dev/null
+        grep -rl 'CN-PATCH' --include='*.php' --include='*.js' --include='*.css' . 2>/dev/null
         # startup.sh 是 shell 脚本，单独带上
         echo './startup.sh'
     } \
