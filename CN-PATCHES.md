@@ -20,9 +20,12 @@
 | CN-PATCH 4 | 简体中文提到语言列表首位 | `includes/i18n/languages.php` | 数组顺序 |
 | CN-PATCH 5 | 姓/名合并为「昵称」 | `registration.php`、`profile.php`、`endpoints/user/save_user.php`、`scripts/registration.js`、`includes/i18n/{zh_cn,en}.php` | 表单+逻辑 |
 | CN-PATCH 6 | 默认货币人民币 + 货币名中文化 | `registration.php`、`createdatabase.php`、`includes/i18n/zh_cn.php` | 表单+种子 |
+| CN-PATCH 6b | 注册页的货币表收敛为 11 种 | `registration.php` | 数组 |
 | CN-PATCH 7 | 中文日期格式 | `includes/list_subscriptions.php`、`index.php`、`scripts/subscription-details.js` | 展示 |
 | CN-PATCH 8 | 存量数据中文化脚本 | `tools/cn-seed.php`、`startup.sh` | 独立脚本 |
 | CN-PATCH 9 | 品牌文案本地化 | `header.php`、`login.php`、`registration.php`、`passwordreset.php`、`totp.php`、`verifyemail.php`、`manifest.php` | 文案 |
+| CN-PATCH 10 | 覆盖式构建镜像 | `docker/Dockerfile.cn`、`docker/docker-compose.cn.yml` | 构建 |
+| CN-PATCH 11 | 本地构建临时目录忽略 | `.gitignore` | 杂项 |
 
 ---
 
@@ -149,13 +152,31 @@ Cookie（用户显式选择）
 而 `$currencies` 数组第一项是 Euro。货币名来自数据库 `currencies.name` 列，
 存的是英文全名。
 
+**⚠️ 这里踩了一个坑，值得记下来**：上游有**两份独立的货币表**——
+
+| 位置 | 作用 | 触发时机 |
+|---|---|---|
+| `endpoints/cronjobs/createdatabase.php` | 建库时的种子 SQL | **只在全新安装第一次启动时执行一次** |
+| `registration.php` 的 `$currencies` 数组 | 注册时写入 currencies 表 | **每个新用户注册时都执行** |
+
+只改前者的话，已经建过库的实例完全不受影响，新注册的用户照样拿到 34 种英文货币。
+这就是 CN-PATCH 6b 存在的原因。
+
 **改法**：
 
-1. 注册页给 CNY 加 `selected`（`createdatabase.php` 已把人民币排第一，双保险）
+1. 注册页给 CNY 加 `selected`
 2. 注册时写入数据库的货币名走 `translate('currency_' . code)`，
    存中文而不是英文——因为「设置 → 货币」页把 `name` 当普通文本框直接展示，
    表里存英文的话那里看到的还是英文
 3. `zh_cn.php` 补 11 个 `currency_xxx` 键
+4. **CN-PATCH 6b**：把 `registration.php` 的 `$currencies` 收敛为 11 种，人民币置首
+
+---
+
+### CN-PATCH 6b — 注册页货币表
+
+见上面 6 的说明。`registration.php:79` 那份 34 项数组改为 11 项，
+保留上游的 `id` 原值（某些历史路径会用它关联）。
 
 ---
 
@@ -191,6 +212,16 @@ JS 侧 `subscription-details.js` 用了 `toLocaleDateString('zh_cn')`——
 **为什么停用而不是删除**：`subscriptions.payment_method_id` 引用着这些 id，
 删掉会留下悬空外键，历史订阅的支付方式显示为空。停用只是从下拉框隐藏。
 
+**另外还做了两件事**：
+
+- **重排 order**：上游的 `order` 是按欧美习惯排的（PayPal 第 1、支付宝第 17、
+  微信第 24）。光改名不重排，订阅表单的下拉框仍然是 PayPal 在最上面。
+  现在把启用中的渠道按国内习惯重新编号 1–10，停用的统一挪到 999。
+- **清理冷门货币**：34 种里去掉 23 种（保加利亚列弗、冰岛克朗之类）。
+  与支付方式不同，货币**可以删**——因为删除前先检查了没有任何订阅引用它，
+  且不是任何用户的主货币。保留它们的唯一后果是「设置 → 货币」页要滚动，
+  汇率表多算 23 个无用条目。
+
 **幂等性**：只更新「名字仍然精确等于上游英文默认值」的行。用户自己改过名字的
 不会被碰，重复执行无副作用。
 
@@ -200,6 +231,50 @@ JS 侧 `subscription-details.js` 用了 `toLocaleDateString('zh_cn')`——
 
 由 `startup.sh` 在 `migrate.php` 之后调用，也可以手动
 `docker exec wallos php tools/cn-seed.php`。
+
+---
+
+### CN-PATCH 10 — 覆盖式构建镜像
+
+`docker/Dockerfile.cn` 以 `bellamy/wallos:5.8.3` 为底座，只 COPY 我们改过的
+23 个文件。
+
+**为什么不用仓库根目录那个 Dockerfile**：它 `FROM php:8.3-fpm-alpine` 然后
+`apk add` 一堆扩展，一次构建十几分钟，每次上游发版都要重跑全部编译。
+中文化只动 PHP/JS 文件，覆盖式构建 3 秒完成，且上游的安全修复、依赖升级
+全部自动继承。
+
+**为什么 COPY 逐个文件而不是 COPY 整个目录**：COPY 整目录会用我们 v5.8.3 的
+旧文件覆盖掉新版镜像里所有更新过的文件，上游的 bug 修复会静默丢失。
+逐个列举后，如果上游改了某个我们也在改的文件，冲突会在
+`git merge upstream/main` 时暴露（可解决），而不是在构建时被无声覆盖。
+
+**踩到的坑：CRLF 行尾**。
+
+第一次构建后容器无限重启：
+
+```
+[dumb-init] /var/www/html/startup.sh: No such file or directory
+```
+
+用 `od -c` 看首行是 `# ! / b i n / s h \r \n` —— Windows 上
+`core.autocrlf=true`，git checkout 把 `startup.sh` 转成了 CRLF。
+shebang 变成 `#!/bin/sh\r`，kernel 去找 `/bin/sh\r`，当然找不到。
+
+修法是在 Dockerfile 里加一道 `sed -i 's/\r$//'`，而不是依赖 `.gitattributes`——
+试过用 `.gitattributes` 声明 `eol=lf`，但在 `core.autocrlf=true` 的 Windows
+检出上会让整个工作区显示成已修改（几百个文件），反而制造噪音。
+镜像里兜一层更可靠，也顺带覆盖了"别人直接 scp 传文件"的场景。
+
+**为什么固定 `5.8.3` 而不是 `latest`**：`latest` 会随上游更新漂移，
+某天 `docker compose build` 后补丁对不上，页面直接 500。
+固定版本 + 手动升级更可控。
+
+---
+
+### CN-PATCH 11 — 忽略本地构建临时目录
+
+`.gitignore` 加 `.tmp/`，避免本地打包的 tar 和校验脚本被提交。
 
 ---
 
@@ -241,15 +316,30 @@ git checkout cn
 git merge upstream/main
 
 # 4. 处理冲突
-#    冲突只可能出现在我们改过的 19 个文件里，靠 CN-PATCH 标记定位
+#    冲突只可能出现在我们改过的 23 个文件里，靠 CN-PATCH 标记定位
 grep -rn "CN-PATCH" .
 
-# 5. 语法自检
-docker run --rm -v "$PWD":/app -w /app php:8.3-cli \
-  sh -c 'find . -name "*.php" -newer .git/HEAD -exec php -l {} \;'
+# 5. 语法自检（需要一个 php 环境；容器里也行）
+#    见下方"语法检查"小节
 
-# 6. 构建并替换
-docker compose build && docker compose up -d
+# 6. 改 docker/Dockerfile.cn 第一行的 FROM 版本号，重新构建部署
+#    见第五节
+```
+
+### 语法检查
+
+本地没有 PHP 时，可以借用运行中的容器：
+
+```bash
+sudo docker exec wallos php -l /var/www/html/registration.php
+```
+
+批量检查：
+
+```bash
+# 在仓库根目录
+find . -name "*.php" -not -path "./libs/*" -not -path "./.git/*" \
+  -exec sh -c 'docker cp "$1" wallos:/tmp/chk.php >/dev/null && docker exec wallos php -l /tmp/chk.php' _ {} \;
 ```
 
 ### 冲突概率评估
@@ -283,29 +373,116 @@ docker compose build && docker compose up -d
 
 每次合并上游或改完代码，按这个清单过一遍：
 
-- [ ] `php -l` 全部通过
-- [ ] 注册页：语言默认简体中文、货币默认人民币、只有「昵称」没有姓/名
-- [ ] 注册后：分类和支付方式是中文
-- [ ] 设置页：支付方式列表是国内渠道，海外项已停用
-- [ ] 订阅列表：日期是「10月17日」格式
-- [ ] 首页：问候语显示昵称（或回退用户名）
-- [ ] 个人资料：只有昵称一个字段，改了能保存
-- [ ] `docker logs wallos` 里 `cn-seed` 没有报错
+### 已实测通过（2026-10-17）
+
+**存量实例**（`http://192.168.2.202:61032`，已有账号「子愚」）：
+
+| 检查项 | 结果 |
+|---|---|
+| 容器状态 | `Up (healthy)` |
+| `cn-seed` 执行 | 分类 16 项、支付方式改名 7 / 停用 21 / 重排 10、货币改名 11 / 清理 23 |
+| 分类全部中文 | ✅ 影音娱乐 / 音乐 / 生活缴费 … 公益捐赠 |
+| 支付方式前 10 项 | ✅ 支付宝 / 微信支付 / 银联云闪付 / 信用卡 / 银行转账 / 自动扣款 / 现金·其他 / PayPal / Apple Pay / Google Pay |
+| 停用的支付方式 | 21 项（Klarna、SEPA、Skrill 等） |
+| 货币 | ✅ 11 种，全部中文名，人民币在列 |
+| 页面文案 | ✅ `<title>` 为「订阅台账 · SubDesk」，`window.lang = zh_cn` |
+
+**全新实例**（临时容器 + 空数据库，测试后已销毁）：
+
+| 检查项 | 结果 |
+|---|---|
+| 注册表单字段 | ✅ 只有 `nickname`，无 `firstname` / `lastname` |
+| 表单标签 | ✅ 用户名 / 昵称 / 电子邮箱 / 密码 / 确认密码 / 主要货币 / 语言 |
+| 默认货币 | ✅ CNY 带 `selected` |
+| 货币下拉顺序 | ✅ 人民币 / 美元 / 港币 / 日元 / 欧元 … 共 11 项 |
+| 完整注册流程 | ✅ HTTP 302 跳转登录页 |
+| 注册后用户记录 | `firstname=小明`，`lastname` 空，`language=zh_cn`，`main_currency=20`(CNY) |
+| 注册后分类 | ✅ 17 项全中文 |
+| 注册后支付方式 | ✅ 支付宝 / 微信支付 / 银联云闪付 / 信用卡 / 银行转账 / 花呗 / 京东白条 / 虚拟信用卡 / 自动扣款 / 现金·其他 / PayPal / Apple Pay |
+| 注册后货币 | ✅ 11 项全中文，主货币 CNY |
+
+**语法检查**：19 个改动文件 `php -l` 全部通过。
+
+### 待人工确认（需要浏览器）
+
+- [ ] 首页问候语显示昵称（或回退用户名）
+- [ ] 订阅列表日期显示为「10月17日」而非「Oct 17」
+- [ ] 个人资料页只有昵称一个字段，修改能保存
+- [ ] 订阅表单的支付方式下拉顺序符合预期
+- [ ] 设置页货币列表只剩 11 项
 
 ---
 
-## 五、回滚
+## 五、部署
+
+### 当前部署状态
+
+| 项 | 值 |
+|---|---|
+| 地址 | `http://192.168.2.202:61032/` |
+| 镜像 | `wallos-cn:5.8.3`（由 `docker/Dockerfile.cn` 构建） |
+| 容器 | `wallos`，`healthy`，`restart: unless-stopped` |
+| 构建上下文 | `/vol1/1000/docker/wallos/src/`（从本地打包上传） |
+| 数据 | `/vol1/1000/docker/wallos/db` → `/var/www/html/db` |
+| Logo | `/vol1/1000/docker/wallos/logos` → `/var/www/html/images/uploads/logos` |
+| 网络 | `trim-default`（与青龙等其他容器一致） |
+
+### 从本地重新构建部署
+
+```powershell
+# Windows 本地（仓库根目录）
+cd C:\DSH\Wallos
+tar -czf .tmp\wallos-cn-build.tar.gz --exclude=.git --exclude=.tmp `
+    --exclude=screenshots --exclude=webfonts --exclude=dev .
+scp -i C:\DSH\.secrets\id_rsa -P 60022 .tmp\wallos-cn-build.tar.gz otones@192.168.2.202:/tmp/
+```
+
+```bash
+# N150 上
+rm -rf /vol1/1000/docker/wallos/src && mkdir -p /vol1/1000/docker/wallos/src
+tar -xzf /tmp/wallos-cn-build.tar.gz -C /vol1/1000/docker/wallos/src
+cd /vol1/1000/docker/wallos/src/docker
+sudo docker build -f Dockerfile.cn -t wallos-cn:5.8.3 ..
+sudo docker rm -f wallos
+sudo docker run -d --name wallos --hostname wallos --network trim-default \
+  -p 61032:80 -e TZ=Asia/Shanghai \
+  -v /vol1/1000/docker/wallos/db:/var/www/html/db \
+  -v /vol1/1000/docker/wallos/logos:/var/www/html/images/uploads/logos \
+  --restart unless-stopped wallos-cn:5.8.3
+```
+
+### 手动重跑数据迁移（幂等，可随时执行）
+
+```bash
+sudo docker exec wallos php /var/www/html/tools/cn-seed.php
+```
+
+---
+
+## 六、回滚
 
 ```bash
 cd /vol1/1000/docker/wallos
-sudo docker compose down
-cp db/wallos.db.bak-20261017-1146 db/wallos.db   # 恢复数据库
-# 把 docker-compose.yml 的 image 改回 bellamy/wallos:latest
-sudo docker compose up -d
+sudo docker rm -f wallos
+cp db/wallos.db.bak-before-cn db/wallos.db   # 恢复改造前的数据库
+sudo docker run -d --name wallos --hostname wallos --network trim-default \
+  -p 61032:80 -e TZ=Asia/Shanghai \
+  -v /vol1/1000/docker/wallos/db:/var/www/html/db \
+  -v /vol1/1000/docker/wallos/logos:/var/www/html/images/uploads/logos \
+  --restart unless-stopped bellamy/wallos:5.8.3
 ```
 
 或者切回 main 分支重新构建：
 
 ```bash
-cd /c/DSH/Wallos && git checkout main && docker compose build && docker compose up -d
+cd /c/DSH/Wallos && git checkout main && git push origin main
 ```
+
+**已备份的数据库**：
+
+| 文件 | 时间点 |
+|---|---|
+| `db/wallos.db.bak-20261017-1146` | 改造前 |
+| `db/wallos.db.bak-before-cn` | 替换镜像前 |
+
+---

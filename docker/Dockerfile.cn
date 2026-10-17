@@ -1,0 +1,76 @@
+# syntax=docker/dockerfile:1
+#
+# [CN-PATCH 10] 中文化覆盖镜像。
+#
+# 设计意图：不重新构建整个应用，而是以官方镜像为底座，只覆盖我们改过的文件。
+#
+# 为什么不用仓库根目录那个 Dockerfile：
+#   它 FROM php:8.3-fpm-alpine 然后 apk add 一堆扩展，一次构建十几分钟，
+#   而且每次上游发版都要重跑全部编译。中文化改造只动 PHP/JS 文件，
+#   用覆盖方式构建只要几秒，且上游的安全修复、依赖升级全部自动继承。
+#
+# 为什么 COPY 逐个文件而不是 COPY 整个目录：
+#   COPY 整个目录会用我们 v5.8.3 的旧文件覆盖掉新版镜像里所有更新过的文件，
+#   上游的 bug 修复会静默丢失。逐个列举后，如果上游改了某个我们也在改的文件，
+#   冲突会在 `git merge upstream/main` 时暴露出来（可解决），
+#   而不是在构建时被无声覆盖。
+#
+# 升级流程：
+#   1. 改下面这行的版本号
+#   2. git merge upstream/main 并解决冲突
+#   3. docker compose build && docker compose up -d
+#
+# 版本基线与我们的补丁对应关系见 CN-PATCHES.md。
+
+FROM bellamy/wallos:5.8.3
+
+# ---- CN-PATCH 1 / 5 / 6：翻译键、昵称、货币名 ----------------------------
+COPY includes/i18n/zh_cn.php     /var/www/html/includes/i18n/zh_cn.php
+COPY includes/i18n/en.php        /var/www/html/includes/i18n/en.php
+COPY includes/i18n/getlang.php   /var/www/html/includes/i18n/getlang.php
+COPY includes/i18n/languages.php /var/www/html/includes/i18n/languages.php
+
+# ---- CN-PATCH 2 / 2b：默认分类与支付方式 --------------------------------
+COPY includes/default_names.php            /var/www/html/includes/default_names.php
+COPY endpoints/cronjobs/createdatabase.php /var/www/html/endpoints/cronjobs/createdatabase.php
+
+# ---- CN-PATCH 5：姓/名合并为昵称 ----------------------------------------
+COPY registration.php                /var/www/html/registration.php
+COPY profile.php                     /var/www/html/profile.php
+COPY endpoints/user/save_user.php    /var/www/html/endpoints/user/save_user.php
+COPY scripts/registration.js         /var/www/html/scripts/registration.js
+
+# ---- CN-PATCH 7：中文日期格式 -------------------------------------------
+COPY includes/list_subscriptions.php     /var/www/html/includes/list_subscriptions.php
+COPY index.php                           /var/www/html/index.php
+COPY scripts/subscription-details.js     /var/www/html/scripts/subscription-details.js
+
+# ---- CN-PATCH 9：品牌文案 -----------------------------------------------
+COPY includes/header.php  /var/www/html/includes/header.php
+COPY login.php            /var/www/html/login.php
+COPY passwordreset.php    /var/www/html/passwordreset.php
+COPY totp.php             /var/www/html/totp.php
+COPY verifyemail.php      /var/www/html/verifyemail.php
+COPY manifest.php         /var/www/html/manifest.php
+
+# ---- CN-PATCH 8：存量数据迁移脚本（上游镜像里没有这个目录） -------------
+COPY tools/cn-seed.php    /var/www/html/tools/cn-seed.php
+
+# ---- CN-PATCH 8：startup.sh 增加 cn-seed 调用 ---------------------------
+# 覆盖后必须重新赋予执行位，并且**必须去掉 CRLF 行尾**。
+#
+# 两个原因：
+#   1. Windows 上 git checkout 默认 core.autocrlf=true，脚本会带 CRLF。
+#      shebang 变成 "#!/bin/sh\r"，kernel 找不到 "/bin/sh\r"，
+#      容器启动直接 Permission denied / No such file，然后无限重启。
+#      .gitattributes 已经声明了 eol=lf，但构建上下文可能来自旧 checkout，
+#      也可能有人直接用 scp 传文件，所以在镜像里再兜一层。
+#   2. COPY 在 Windows 上不保留 unix 权限位，chmod +x 必须显式执行。
+COPY startup.sh /var/www/html/startup.sh
+RUN sed -i 's/\r$//' /var/www/html/startup.sh \
+ && chmod +x /var/www/html/startup.sh \
+ && head -1 /var/www/html/startup.sh | od -c | head -1
+
+# 让 docker 层面的健康检查在文件被替换后仍然有效（基镜像已定义，这里只是显式确认）
+HEALTHCHECK --interval=2m --timeout=5s --start-period=25s --retries=3 \
+    CMD ["curl", "-fsS", "http://127.0.0.1/health.php"]

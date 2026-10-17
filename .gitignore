@@ -8,3 +8,6 @@
 AGENTS.md
 .antigravitycli
 plan.html
+
+# [CN-PATCH 11] 本地构建用的临时打包目录
+.tmp/

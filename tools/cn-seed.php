@@ -81,6 +81,19 @@ $paymentDisable = [
     'Samsung Pay', 'Crypto',
 ];
 
+/**
+ * 国内常用支付方式的展示顺序。
+ *
+ * 上游的 order 是按欧美习惯排的（PayPal 第 1、支付宝第 17、微信第 24），
+ * 光改名不重排的话，订阅表单的下拉框仍然是 PayPal 在最上面。
+ * 这里对启用中的渠道重新编号，停用的保持在后面（反正不显示）。
+ */
+$paymentOrder = [
+    '支付宝', '微信支付', '银联云闪付', '信用卡', '银行转账',
+    '花呗', '京东白条', '虚拟信用卡', '自动扣款', '现金 / 其他',
+    'PayPal', 'Apple Pay', 'Google Pay',
+];
+
 /** 货币英文名 => 中文名。 */
 $currencyMap = [
     'Chinese Yuan' => '人民币',
@@ -96,7 +109,24 @@ $currencyMap = [
     'Canadian Dollar' => '加元',
 ];
 
-$stats = ['categories' => 0, 'payments_renamed' => 0, 'payments_disabled' => 0, 'currencies' => 0];
+/**
+ * 国内用不到的货币，且没有任何订阅引用时直接删除。
+ *
+ * 为什么可以删而支付方式只能停用：subscriptions 用 currency_id 引用货币，
+ * 所以删除前必须先确认没有订阅在用（下面 SQL 会检查）。
+ * 保留 34 种货币的唯一后果是「设置 → 货币」页长得要滚动，
+ * 以及汇率表多算 23 个无用条目。
+ */
+$currencyPrune = [
+    'BGN', 'CZK', 'DKK', 'HUF', 'PLN', 'RON', 'SEK', 'CHF', 'ISK',
+    'NOK', 'RUB', 'TRY', 'BRL', 'IDR', 'ILS', 'INR', 'MXN', 'MYR',
+    'NZD', 'PHP', 'THB', 'ZAR', 'UAH',
+];
+
+$stats = [
+    'categories' => 0, 'payments_renamed' => 0, 'payments_disabled' => 0,
+    'payments_reordered' => 0, 'currencies' => 0, 'currencies_pruned' => 0,
+];
 
 $db->exec('BEGIN IMMEDIATE');
 try {
@@ -126,12 +156,44 @@ try {
         $stmt->reset();
     }
 
+    // 重排启用中的支付方式：先按 $paymentOrder 编号 1..N，
+    // 停用的接在后面，避免 order 撞号导致排序不稳定。
+    $stmt = $db->prepare('UPDATE payment_methods SET "order" = :ord WHERE name = :name');
+    $order = 1;
+    foreach ($paymentOrder as $name) {
+        $stmt->bindValue(':ord', $order, SQLITE3_INTEGER);
+        $stmt->bindValue(':name', $name, SQLITE3_TEXT);
+        $stmt->execute();
+        $stats['payments_reordered'] += $db->changes();
+        $stmt->reset();
+        $order++;
+    }
+    $stmt = $db->prepare('UPDATE payment_methods SET "order" = :ord WHERE enabled = 0');
+    $stmt->bindValue(':ord', 999, SQLITE3_INTEGER);
+    $stmt->execute();
+    $stmt->reset();
+
     $stmt = $db->prepare('UPDATE currencies SET name = :cn WHERE name = :en');
     foreach ($currencyMap as $en => $cn) {
         $stmt->bindValue(':cn', $cn, SQLITE3_TEXT);
         $stmt->bindValue(':en', $en, SQLITE3_TEXT);
         $stmt->execute();
         $stats['currencies'] += $db->changes();
+        $stmt->reset();
+    }
+
+    // 删除没有任何订阅引用的冷门货币。
+    // 先查引用再删，避免留下悬空的 currency_id。
+    $stmt = $db->prepare(
+        'DELETE FROM currencies
+          WHERE code = :code
+            AND id NOT IN (SELECT DISTINCT currency_id FROM subscriptions WHERE currency_id IS NOT NULL)
+            AND id <> (SELECT main_currency FROM user WHERE id = currencies.user_id)'
+    );
+    foreach ($currencyPrune as $code) {
+        $stmt->bindValue(':code', $code, SQLITE3_TEXT);
+        $stmt->execute();
+        $stats['currencies_pruned'] += $db->changes();
         $stmt->reset();
     }
 
@@ -147,11 +209,13 @@ if ($total === 0) {
     echo "[cn-seed] 数据已是中文，无改动。\n";
 } else {
     echo sprintf(
-        "[cn-seed] 完成：分类 %d 项、支付方式改名 %d 项 / 停用 %d 项、货币 %d 项。\n",
+        "[cn-seed] 完成：分类 %d 项、支付方式改名 %d / 停用 %d / 重排 %d、货币改名 %d / 清理 %d。\n",
         $stats['categories'],
         $stats['payments_renamed'],
         $stats['payments_disabled'],
-        $stats['currencies']
+        $stats['payments_reordered'],
+        $stats['currencies'],
+        $stats['currencies_pruned']
     );
 }
 

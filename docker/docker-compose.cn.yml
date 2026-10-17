@@ -1,0 +1,36 @@
+# [CN-PATCH 10] Wallos 中文化版本 · N150 部署配置
+#
+# 与上游 docker-compose.yaml 的差异：
+#   1. 不用 image:，改成 build:，指向仓库根目录 + docker/Dockerfile.cn
+#   2. 端口 61032
+#   3. 网络使用 N150 上已有的 trim-default（与其他容器一致）
+#   4. 数据卷沿用 app 内的相对路径约定（./db、./logos），
+#      这样 docker compose 的工作目录就是数据目录
+#
+# 升级上游：
+#   cd /c/DSH/Wallos && git fetch upstream --tags && git merge upstream/main
+#   改 docker/Dockerfile.cn 第一行的 FROM 版本号
+#   sudo docker compose build && sudo docker compose up -d
+
+services:
+  wallos:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cn
+    image: wallos-cn:5.8.3
+    container_name: wallos
+    hostname: wallos
+    ports:
+      - '61032:80'
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - './db:/var/www/html/db'
+      - './logos:/var/www/html/images/uploads/logos'
+    networks:
+      - trim-default
+    restart: unless-stopped
+
+networks:
+  trim-default:
+    external: true
