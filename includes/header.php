@@ -176,7 +176,18 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
         <div class="dropdown">
           <button class="dropbtn" onClick="toggleDropdown()">
             <img src="<?= htmlspecialchars($userData['avatar'], ENT_QUOTES, 'UTF-8') ?>" alt="me" id="avatar">
-            <span id="user" class="mobileNavigationHideOnMobile"><?= $userData['username'] ?></span>
+            <?php
+            // [CN-PATCH 15] 这里原本只显示 $userData['username']，所以填了昵称
+            // 右上角也不变 —— 昵称字段形同虚设。
+            //
+            // 顺序：昵称（存在 firstname 列）→ 用户名。
+            // 与 index.php 的问候语保持同一个回退规则，两处显示一致。
+            $displayName = trim((string) ($userData['firstname'] ?? ''));
+            if ($displayName === '') {
+                $displayName = (string) $userData['username'];
+            }
+            ?>
+            <span id="user" class="mobileNavigationHideOnMobile"><?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?></span>
           </button>
           <div class="dropdown-content">
             <a href="." class="mobileNavigationHideOnMobile">

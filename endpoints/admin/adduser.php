@@ -67,7 +67,12 @@ $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 $stmt->bindValue(':username', $username, SQLITE3_TEXT);
 $stmt->bindValue(':email', $email, SQLITE3_TEXT);
 $stmt->bindValue(':password', $hashedPassword, SQLITE3_TEXT);
-$stmt->bindValue(':main_currency', 1, SQLITE3_TEXT);
+// [CN-PATCH 14] 原本硬编码 1。1 是 Euro 在上游种子里的 id，本实例的
+// currencies.id 由 AUTOINCREMENT 决定，不保证 1 是哪个货币 ——
+// 新库里 1 恰好是人民币，纯属巧合，换一种插入顺序就会变成别的。
+// 留一个不指向任何行的占位值，真实 id 由下面的「Update user main currency」
+// 按 ISO 代码查出来后回填。
+$stmt->bindValue(':main_currency', 0, SQLITE3_INTEGER);
 $stmt->bindValue(':avatar', $avatar, SQLITE3_TEXT);
 $stmt->bindValue(':language', $language, SQLITE3_TEXT);
 $stmt->bindValue(':budget', 0, SQLITE3_INTEGER);

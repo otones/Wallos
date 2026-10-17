@@ -10,6 +10,7 @@ endpoints/admin/adduser.php
 endpoints/cronjobs/createdatabase.php
 endpoints/user/save_user.php
 includes/default_names.php
+includes/header.php
 includes/i18n/en.php
 includes/i18n/getlang.php
 includes/i18n/languages.php
@@ -23,3 +24,4 @@ scripts/registration.js
 scripts/subscription-details.js
 startup.sh
 tools/cn-seed.php
+tools/fix-main-currency.php

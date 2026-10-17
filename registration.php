@@ -100,8 +100,19 @@ if (isset($_POST['username'])) {
     $password = $_POST['password'];
     $confirm_password = $_POST['confirm_password'];
     $main_currency = $_POST['main_currency'];
-    $main_currency_index = array_search($main_currency, array_column($currencies, 'code'));
-    $main_currency_id = $currencies[$main_currency_index]['id'];
+    // [CN-PATCH 14] 这里原本是 $currencies[$main_currency_index]['id']，
+    // 取的是 DEFAULT_CURRENCIES 里硬编码的上游行 id。那个 id 只是常量作者
+    // 抄过来的数字，和本实例数据库里真正的行 id 没有任何关系 ——
+    // currencies.id 是 AUTOINCREMENT，由插入顺序决定。
+    //
+    // 结果是 user.main_currency 被写成 20（CNY 在上游的 id），而新库里
+    // CNY 的实际 id 是 1，于是 calendar.php 的 INNER JOIN 匹配不到行，
+    // 货币代码为 null，统计卡片直接抛 TypeError。
+    //
+    // 正确做法：INSERT user 时这里只放一个占位值，真正的 id 由下面
+    // 「Retrieve main currency id」按 code 查出来再 UPDATE 回去。
+    // 占位值用 0 而不是某个真实 id，避免它在回填失败时"碰巧指到某个货币"。
+    $main_currency_id = 0;
     $language = $_POST['language'];
     $avatar = "images/avatars/0.svg";
 
@@ -205,12 +216,23 @@ if (isset($_POST['username'])) {
                 }
 
                 // Retrieve main currency id
+                //
+                // [CN-PATCH 14] 这是 user.main_currency 的唯一正确来源：
+                // 按 ISO 代码查本实例数据库里刚插入的那一行。
                 $query = "SELECT id FROM currencies WHERE code = :code AND user_id = :user_id";
                 $stmt = $db->prepare($query);
                 $stmt->bindValue(':code', $main_currency, SQLITE3_TEXT);
                 $stmt->bindValue(':user_id', $userId, SQLITE3_INTEGER);
                 $result = $stmt->execute();
                 $currency = $result->fetchArray(SQLITE3_ASSOC);
+
+                if ($currency === false) {
+                    // 理论上不会发生：上面的循环刚插入了全部 DEFAULT_CURRENCIES。
+                    // 但如果真发生了（比如 $main_currency 是伪造的表单值），
+                    // 静默把 0 写进 user.main_currency 会让整个实例的货币
+                    // 显示全部失效，且很难查。这里直接失败，留下明确线索。
+                    die("无法确定主货币 '" . htmlspecialchars($main_currency) . "' 在数据库中的 id");
+                }
 
                 // Update user main currency
                 $query = "UPDATE user SET main_currency = :main_currency WHERE id = :user_id";

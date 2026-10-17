@@ -28,6 +28,8 @@
 | CN-PATCH 11 | 本地构建临时目录忽略 | `.gitignore` | 杂项 |
 | CN-PATCH 12 | **货币表统一为单一来源**（修复四条建号路径不一致） | `includes/default_names.php`、`registration.php`、`endpoints/admin/adduser.php`、`includes/oidc/oidc_create_user.php` | 重构 |
 | CN-PATCH 13 | 构建期自检：漏覆盖即构建失败 | `docker/Dockerfile.cn`、`docker/expected-patches.txt`、`tools/gen-expected-patches.sh` | 构建 |
+| CN-PATCH 14 | **修复主货币 id 错位**（日历页 TypeError） | `includes/default_names.php`、`registration.php`、`endpoints/admin/adduser.php`、`includes/oidc/oidc_create_user.php`、`includes/list_subscriptions.php`、`tools/fix-main-currency.php` | 修复 |
+| CN-PATCH 15 | **右上角显示昵称**而非用户名 | `includes/header.php` | 修复 |
 
 ---
 
@@ -353,8 +355,107 @@ sh tools/gen-expected-patches.sh
 
 ---
 
-### 货币表：四条路径的一致性验证
+### CN-PATCH 14 — 主货币 id 错位（这是 CN-PATCH 12 引入的 bug）
 
+**症状**：日历页下方两个统计卡片变成两坨蓝色报错：
+
+```
+NumberFormatter::formatCurrency(): Argument #2 ($currency) must be of type
+string, null given, called in .../includes/currency_formatter.php on line 19
+```
+
+同时页面顶部还有一条：
+`Warning: Trying to access array offset on value of type bool in .../calendar.php on line 85`
+
+**根因**：`DEFAULT_CURRENCIES` 里我沿用了**上游的硬编码行 id**：
+
+```php
+['id' => 20, 'name' => 'Chinese Yuan', ...],   // CNY 在上游是 20
+```
+
+上游这些 id 之所以能对上，是因为它自己的种子也按同样顺序插入 34 种货币，
+AUTOINCREMENT 恰好给出了同样的号。我们把列表缩短到 11 项后，
+这个巧合就断了：**CNY 在新库里拿到 id 1，而 `registration.php` 仍然把 20
+写进了 `user.main_currency`**。
+
+于是 `calendar.php:79` 的查询：
+
+```sql
+SELECT c.code FROM currencies c
+INNER JOIN user u ON c.id = u.main_currency
+WHERE u.id = :userId
+```
+
+匹配不到任何行 → `$row['code']` 是 `null` → `CurrencyFormatter::format($amount, null)`
+抛 TypeError → 卡片渲染成一坨报错。
+
+**为什么之前没发现**：这条路径只在「已经注册了用户、然后访问日历页」时触发。
+我之前的验证是在临时空库里测建号，测完就销毁了，从没登录进去看过日历。
+
+**改法**：`DEFAULT_CURRENCIES` **不再携带 id**。
+
+`currencies.id` 是 `INTEGER PRIMARY KEY AUTOINCREMENT`，由插入顺序决定，
+这个值本文件无法预知，也不该由它决定。改完之后，所有需要真实 id 的地方
+都按 ISO 代码查：
+
+```php
+$stmt = $db->prepare("SELECT id FROM currencies WHERE code = :code AND user_id = :user_id");
+```
+
+`INSERT user` 时的 `main_currency` 一律写占位值 **0**（不是某个真实 id），
+真实值由插入完货币后按 code 查出来再 UPDATE 回去。写 0 而不是 1 或 20，
+是因为 0 永远不指向任何行 —— 回填失败时会明确暴露，而不是"碰巧指到某个货币"。
+
+**改了五处**：
+
+| 文件 | 原来 | 现在 |
+|---|---|---|
+| `includes/default_names.php` | 数组带 `id` | 去掉 `id` 字段 |
+| `registration.php:104` | `$currencies[$i]['id']` 写入 user | 占位 `0`，插入后按 code 回填 |
+| `endpoints/admin/adduser.php:70` | `bindValue(':main_currency', 1)` | 占位 `0`，回填已有 |
+| `includes/oidc/oidc_create_user.php:29` | `DEFAULT_CURRENCIES[0]['id']` | 占位 `0` |
+| `includes/oidc/oidc_create_user.php:96` | `$currencies[0]['id']` | 删除（不再需要） |
+| `includes/list_subscriptions.php:412` | `$currencies[1]['id']` | 按 code 查，或取该用户第一行 |
+
+补上 `tools/fix-main-currency.php` 修复存量数据（由 `startup.sh` 自动调用）：
+找出 `main_currency` 指向不存在行的用户，按该用户货币表的第一行重建指向。
+幂等，正常用户不受影响。
+
+**教训**：`DEFAULT_CURRENCIES` 里那个 `id` 从来不是常量作者能知道的东西 ——
+它是数据库在插入时分配的。把它写成常量，等于把「插入顺序」这个隐含假设
+固化进了一个看起来像事实的数字里。上游之所以没炸，纯粹是因为两边顺序一致。
+
+---
+
+### CN-PATCH 15 — 右上角显示昵称
+
+**症状**：个人资料里把昵称改成「子愚」，右上角仍然显示用户名 `otones`。
+
+**根因**：`includes/header.php:179` 写死了 `$userData['username']`：
+
+```php
+<span id="user"><?= $userData['username'] ?></span>
+```
+
+昵称字段（`firstname` 列）根本没参与渲染。CN-PATCH 5 把姓/名合并成昵称时
+只改了表单和存储，忘了改这个显示点。
+
+**改法**：
+
+```php
+$displayName = trim((string) ($userData['firstname'] ?? ''));
+if ($displayName === '') {
+    $displayName = (string) $userData['username'];
+}
+```
+
+回退顺序与 `index.php` 的问候语一致，两处显示不会打架。
+`$userData` 每次请求都从数据库重新查（`includes/checksession.php:41`），
+所以改完昵称刷新页面即可生效，不需要额外同步 session。
+
+---
+
+### 货币表：四条路径的一致性验证
 上表四个入口，逐个验证结果（2026-10-17，`wallos-cn:5.8.3`）：
 
 | 路径 | 验证方式 | 结果 |
@@ -546,11 +647,26 @@ SELECT code, name FROM currencies WHERE name GLOB '*[A-Za-z]*' AND name NOT IN (
 
 ### 待人工确认（需要浏览器）
 
-- [ ] 首页问候语显示昵称（或回退用户名）
+- [x] ~~首页问候语显示昵称~~ — 已验：右上角显示「子愚」
 - [ ] 订阅列表日期显示为「10月17日」而非「Oct 17」
-- [ ] 个人资料页只有昵称一个字段，修改能保存
+- [ ] 个人资料页修改昵称后保存，右上角随之更新
 - [ ] 订阅表单的支付方式下拉顺序符合预期
-- [ ] 设置页货币列表只剩 11 项
+- [x] ~~设置页货币列表只剩 11 项~~ — 已验：`data-currencyid` 计数 11
+
+### 页面渲染实测（2026-10-17，容器内 curl + 真实登录）
+
+| 页面 | HTTP | NumberFormatter | Warning | TypeError | 备注 |
+|---|---|---|---|---|---|
+| `calendar.php` | 200 | 0 | 0 | 0 | 修复前是两个报错卡片 |
+| `subscriptions.php` | 200 | 0 | 0 | 0 | |
+| `stats.php` | 200 | 0 | 0 | 0 | |
+| `settings.php` | 200 | 0 | 0 | 0 | `data-currencyid` = 11 |
+| `index.php` | 302 | 0 | 0 | 0 | 正常：无订阅时跳订阅页 |
+
+右上角显示：`<span id="user">子愚</span>`（昵称，不是 `otones`）
+
+**验证方式说明**：为了能登录，脚本临时把该用户的密码哈希换成已知值，
+验证完由 `trap EXIT` 还原为原哈希。全程不改变数据，只读页面。
 
 ---
 

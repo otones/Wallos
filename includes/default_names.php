@@ -41,25 +41,45 @@
  * seeded thirty-four, starting with the Euro, which meant a registration form
  * with no preselected option handed a Chinese user a Euro-denominated account.
  *
- * 'id' is the upstream row id and is preserved because some historical code
- * paths use it for lookups. 'name' is the English name; the localized name is
- * resolved at account creation via translate('currency_' . strtolower($code)),
- * falling back to this name when the language file has no key for it.
+ * 'name' is the English name; the localized name is resolved at account creation
+ * via translate('currency_' . strtolower($code)), falling back to this name when
+ * the language file has no key for it.
  *
- * @var array<int, array{id: int, name: string, symbol: string, code: string}>
+ * [CN-PATCH 14] There is deliberately no 'id' here any more, and this is the fix
+ * for a bug the previous version caused.
+ *
+ * The currencies table has `id INTEGER PRIMARY KEY AUTOINCREMENT`, so the row id
+ * is assigned by insertion order, not by anything the caller asks for. The
+ * previous version carried upstream's row ids (CNY => 20, USD => 2, ...) because
+ * upstream's own seed happens to insert all thirty-four in that same order, so
+ * the numbers lined up. Shortening the list to eleven broke the coincidence: the
+ * rows now get ids 1..11, but registration.php wrote user.main_currency = 20
+ * (the id it believed CNY had) into the user row. Nothing pointed at row 20, so
+ * calendar.php's `INNER JOIN currencies ON c.id = u.main_currency` matched no
+ * row, $row['code'] was null, and CurrencyFormatter::format() raised a
+ * TypeError - the two "NumberFormatter::formatCurrency(): Argument #2 must be of
+ * type string, null given" boxes on the calendar page.
+ *
+ * The id is not data this file can know: it belongs to the database. Callers
+ * that need it must look it up by ISO code after inserting the rows - which is
+ * what the 'Retrieve main currency id' step in registration.php already does.
+ * What this constant supplies is the identifier that is stable across
+ * installations: the ISO code.
+ *
+ * @var array<int, array{name: string, symbol: string, code: string}>
  */
 const DEFAULT_CURRENCIES = [
-    ['id' => 20, 'name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
-    ['id' => 2, 'name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
-    ['id' => 21, 'name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
-    ['id' => 3, 'name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
-    ['id' => 1, 'name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
-    ['id' => 7, 'name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
-    ['id' => 34, 'name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
-    ['id' => 30, 'name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
-    ['id' => 25, 'name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
-    ['id' => 17, 'name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
-    ['id' => 19, 'name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
+    ['name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
+    ['name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
+    ['name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
+    ['name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
+    ['name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
+    ['name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
+    ['name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
+    ['name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
+    ['name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
+    ['name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
+    ['name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
 ];
 
 /**
@@ -68,8 +88,11 @@ const DEFAULT_CURRENCIES = [
  * Mirrors default_categories() / default_payment_methods(): resolves at the
  * moment the account is created, stores plain text, never re-translates later.
  *
+ * [CN-PATCH 14] The returned rows carry no 'id' - see the note on
+ * DEFAULT_CURRENCIES. Callers that need the row id look it up by code.
+ *
  * @param string $language
- * @return array<int, array{id: int, name: string, symbol: string, code: string}>
+ * @return array<int, array{name: string, symbol: string, code: string}>
  */
 function default_currencies($language)
 {

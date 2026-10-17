@@ -409,7 +409,20 @@ $row = $result->fetchArray(SQLITE3_ASSOC);
 if ($row !== false) {
     $mainCurrencyId = $row['main_currency'];
 } else {
-    $mainCurrencyId = $currencies[1]['id'];
+    // [CN-PATCH 14] 这里原本是 $currencies[1]['id']：按数组下标取「第一个货币」
+    // 的 id。$currencies 来自数据库，下标 0 是第一行，所以这行取的是第二行，
+    // 而且它假设数组里带着 'id' 键 —— 我们的 DEFAULT_CURRENCIES 不再带 id，
+    // 这个下标一旦被走到就会取到 null。
+    //
+    // 语义上想表达的是「用户没设主货币时，用列表里的第一个（人民币）」。
+    // 改成按 code 查真实 id，与 registration.php 的回填逻辑一致。
+    $mainCurrencyId = null;
+    $fallback = $db->prepare("SELECT id FROM currencies WHERE user_id = :userId ORDER BY id ASC LIMIT 1");
+    $fallback->bindValue(':userId', $userId, SQLITE3_INTEGER);
+    $fallbackRow = $fallback->execute()->fetchArray(SQLITE3_ASSOC);
+    if ($fallbackRow !== false) {
+        $mainCurrencyId = $fallbackRow['id'];
+    }
 }
 
 ?>
