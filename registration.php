@@ -76,28 +76,14 @@ if (isset($_COOKIE['colorTheme'])) {
     $colorTheme = sanitize_color_theme($_COOKIE['colorTheme']);
 }
 
-// [CN-PATCH 6b] 注册页使用的货币表。
+// [CN-PATCH 6b / 12] 货币表统一由 includes/default_names.php 的 DEFAULT_CURRENCIES
+// 提供，不再在这里维护副本。
 //
-// 上游这里另有一份 34 项的硬编码副本（和 createdatabase.php 里的种子是两套
-// 独立数据），注册时用它写入 currencies 表。只改 createdatabase.php 不够 ——
-// 那个只在「全新安装第一次建库」时执行，而这里对**每个新注册用户**都执行。
-//
-// 收敛为国内常用的 11 种，人民币置首（注册页下拉框按此顺序渲染，
-// 且没有 selected 时浏览器选第一项）。
-// 'id' 保留上游原值，因为某些历史代码路径会用它做关联。
-$currencies = [
-    ['id' => 20, 'name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
-    ['id' => 2, 'name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
-    ['id' => 21, 'name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
-    ['id' => 3, 'name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
-    ['id' => 1, 'name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
-    ['id' => 7, 'name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
-    ['id' => 34, 'name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
-    ['id' => 30, 'name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
-    ['id' => 25, 'name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
-    ['id' => 17, 'name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
-    ['id' => 19, 'name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
-];
+// 这里原本有一份独立的 34 项硬编码数组，admin/adduser.php 和
+// oidc_create_user.php 各自还有一份。四处副本没有任何机制保证一致，
+// 导致「注册页」和「管理员加用户」写入的货币不同。现在只有一份定义
+// （default_names.php 已在文件顶部 require）。
+$currencies = DEFAULT_CURRENCIES;
 
 $passwordMismatch = false;
 $usernameExists = false;

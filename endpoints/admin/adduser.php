@@ -3,42 +3,10 @@ require_once '../../includes/connect_endpoint.php';
 require_once '../../includes/validate_endpoint_admin.php';
 require_once '../../includes/default_names.php';
 
-$currencies = [
-    ['id' => 1, 'name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
-    ['id' => 2, 'name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
-    ['id' => 3, 'name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
-    ['id' => 4, 'name' => 'Bulgarian Lev', 'symbol' => 'лв', 'code' => 'BGN'],
-    ['id' => 5, 'name' => 'Czech Republic Koruna', 'symbol' => 'Kč', 'code' => 'CZK'],
-    ['id' => 6, 'name' => 'Danish Krone', 'symbol' => 'kr', 'code' => 'DKK'],
-    ['id' => 7, 'name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
-    ['id' => 8, 'name' => 'Hungarian Forint', 'symbol' => 'Ft', 'code' => 'HUF'],
-    ['id' => 9, 'name' => 'Polish Zloty', 'symbol' => 'zł', 'code' => 'PLN'],
-    ['id' => 10, 'name' => 'Romanian Leu', 'symbol' => 'lei', 'code' => 'RON'],
-    ['id' => 11, 'name' => 'Swedish Krona', 'symbol' => 'kr', 'code' => 'SEK'],
-    ['id' => 12, 'name' => 'Swiss Franc', 'symbol' => 'Fr', 'code' => 'CHF'],
-    ['id' => 13, 'name' => 'Icelandic Króna', 'symbol' => 'kr', 'code' => 'ISK'],
-    ['id' => 14, 'name' => 'Norwegian Krone', 'symbol' => 'kr', 'code' => 'NOK'],
-    ['id' => 15, 'name' => 'Russian Ruble', 'symbol' => '₽', 'code' => 'RUB'],
-    ['id' => 16, 'name' => 'Turkish Lira', 'symbol' => '₺', 'code' => 'TRY'],
-    ['id' => 17, 'name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
-    ['id' => 18, 'name' => 'Brazilian Real', 'symbol' => 'R$', 'code' => 'BRL'],
-    ['id' => 19, 'name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
-    ['id' => 20, 'name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
-    ['id' => 21, 'name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
-    ['id' => 22, 'name' => 'Indonesian Rupiah', 'symbol' => 'Rp', 'code' => 'IDR'],
-    ['id' => 23, 'name' => 'Israeli New Sheqel', 'symbol' => '₪', 'code' => 'ILS'],
-    ['id' => 24, 'name' => 'Indian Rupee', 'symbol' => '₹', 'code' => 'INR'],
-    ['id' => 25, 'name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
-    ['id' => 26, 'name' => 'Mexican Peso', 'symbol' => 'Mex$', 'code' => 'MXN'],
-    ['id' => 27, 'name' => 'Malaysian Ringgit', 'symbol' => 'RM', 'code' => 'MYR'],
-    ['id' => 28, 'name' => 'New Zealand Dollar', 'symbol' => 'NZ$', 'code' => 'NZD'],
-    ['id' => 29, 'name' => 'Philippine Peso', 'symbol' => '₱', 'code' => 'PHP'],
-    ['id' => 30, 'name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
-    ['id' => 31, 'name' => 'Thai Baht', 'symbol' => '฿', 'code' => 'THB'],
-    ['id' => 32, 'name' => 'South African Rand', 'symbol' => 'R', 'code' => 'ZAR'],
-    ['id' => 33, 'name' => 'Ukrainian Hryvnia', 'symbol' => '₴', 'code' => 'UAH'],
-    ['id' => 34, 'name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
-];
+// [CN-PATCH 12] 货币表统一由 includes/default_names.php 的 DEFAULT_CURRENCIES
+// 提供。这里原本是第四份 34 项硬编码副本，与注册页那份没有任何同步机制，
+// 导致管理员通过后台加用户时写入 34 种英文货币，而注册页写入 11 种中文。
+$currencies = DEFAULT_CURRENCIES;
 
 function validate($value)
 {
@@ -142,9 +110,12 @@ if ($result) {
         }
 
         // Add currencies for that user
+        //
+        // [CN-PATCH 12] 用 default_currencies() 而不是直接遍历 $currencies：
+        // 前者会把货币名按新账号的语言翻译成中文，后者只给英文原名。
         $query = "INSERT INTO currencies (name, symbol, code, rate, user_id) VALUES (:name, :symbol, :code, :rate, :user_id)";
         $stmt = $db->prepare($query);
-        foreach ($currencies as $currency) {
+        foreach (default_currencies($language) as $currency) {
             $stmt->bindValue(':name', $currency['name'], SQLITE3_TEXT);
             $stmt->bindValue(':symbol', $currency['symbol'], SQLITE3_TEXT);
             $stmt->bindValue(':code', $currency['code'], SQLITE3_TEXT);

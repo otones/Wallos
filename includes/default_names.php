@@ -18,10 +18,72 @@
   Brand names - PayPal, SEPA, Klarna - are the same word in every language and
   stay literal.
 
-  Currencies are deliberately not here. Their names are a separate list with a
-  separate problem (a currency is identified by its ISO code, not by its name),
-  and folding them in would make this change about something else.
+  Currencies were deliberately left out of this file: their names are a separate
+  list with a separate problem (a currency is identified by its ISO code, not by
+  its name), and folding them in would have made the original change about
+  something else.
+
+  [CN-PATCH 12] That decision turned out to be the reason a localization patch
+  missed two of the four places an account is created. The four copies of the
+  currency list - createdatabase.php, registration.php, admin/adduser.php and
+  oidc_create_user.php - have to agree, and nothing made them agree. Patching two
+  of them left new accounts created through the admin panel or an identity
+  provider with 34 English currencies. DEFAULT_CURRENCIES below is the single
+  definition; the four call sites read it instead of carrying their own copy.
+  Same contract as the categories: what is stored is ordinary editable text, and
+  the ISO code, not the name, is the identity.
 */
+
+/**
+ * The currencies a new account starts with, in display order.
+ *
+ * [CN-PATCH 12] Chinese-market default: eleven currencies, CNY first. Upstream
+ * seeded thirty-four, starting with the Euro, which meant a registration form
+ * with no preselected option handed a Chinese user a Euro-denominated account.
+ *
+ * 'id' is the upstream row id and is preserved because some historical code
+ * paths use it for lookups. 'name' is the English name; the localized name is
+ * resolved at account creation via translate('currency_' . strtolower($code)),
+ * falling back to this name when the language file has no key for it.
+ *
+ * @var array<int, array{id: int, name: string, symbol: string, code: string}>
+ */
+const DEFAULT_CURRENCIES = [
+    ['id' => 20, 'name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
+    ['id' => 2, 'name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
+    ['id' => 21, 'name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
+    ['id' => 3, 'name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
+    ['id' => 1, 'name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
+    ['id' => 7, 'name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
+    ['id' => 34, 'name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
+    ['id' => 30, 'name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
+    ['id' => 25, 'name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
+    ['id' => 17, 'name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
+    ['id' => 19, 'name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
+];
+
+/**
+ * The default currencies for one language, with localized names.
+ *
+ * Mirrors default_categories() / default_payment_methods(): resolves at the
+ * moment the account is created, stores plain text, never re-translates later.
+ *
+ * @param string $language
+ * @return array<int, array{id: int, name: string, symbol: string, code: string}>
+ */
+function default_currencies($language)
+{
+    $translations = default_names_translations($language);
+    $resolved = [];
+
+    foreach (DEFAULT_CURRENCIES as $currency) {
+        $key = 'currency_' . strtolower($currency['code']);
+        $currency['name'] = $translations[$key] ?? $currency['name'];
+        $resolved[] = $currency;
+    }
+
+    return $resolved;
+}
 
 /**
  * Translation keys of the default categories, in display order.

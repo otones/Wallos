@@ -26,6 +26,8 @@
 | CN-PATCH 9 | 品牌文案本地化 | `header.php`、`login.php`、`registration.php`、`passwordreset.php`、`totp.php`、`verifyemail.php`、`manifest.php` | 文案 |
 | CN-PATCH 10 | 覆盖式构建镜像 | `docker/Dockerfile.cn`、`docker/docker-compose.cn.yml` | 构建 |
 | CN-PATCH 11 | 本地构建临时目录忽略 | `.gitignore` | 杂项 |
+| CN-PATCH 12 | **货币表统一为单一来源**（修复四条建号路径不一致） | `includes/default_names.php`、`registration.php`、`endpoints/admin/adduser.php`、`includes/oidc/oidc_create_user.php` | 重构 |
+| CN-PATCH 13 | 构建期自检：漏覆盖即构建失败 | `docker/Dockerfile.cn`、`docker/expected-patches.txt`、`tools/gen-expected-patches.sh` | 构建 |
 
 ---
 
@@ -278,6 +280,102 @@ shebang 变成 `#!/bin/sh\r`，kernel 去找 `/bin/sh\r`，当然找不到。
 
 ---
 
+### CN-PATCH 12 — 货币表统一为单一来源
+
+**这是这个项目里最容易反复踩的坑，值得单独写清楚。**
+
+**症状**：注册页新建的用户货币是 11 种中文，但管理员在后台加的用户、
+以及 OIDC 登录自动创建的用户，仍然拿到 34 种英文货币。
+
+**根因**：上游在**四个地方**各写了一份货币数组，它们没有任何同步机制：
+
+| 位置 | 触发时机 |
+|---|---|
+| `endpoints/cronjobs/createdatabase.php` | 全新安装第一次建库 |
+| `registration.php` | 每个自助注册的用户 |
+| `endpoints/admin/adduser.php` | 管理员后台加用户 |
+| `includes/oidc/oidc_create_user.php` | OIDC 首次登录自动建号 |
+
+第一版补丁只改了前两个，因为我是从「注册页」这个入口倒推去改的，
+没有做全仓扫描。**测出来的表现极具迷惑性**：用第一个用户注册时一切正常
+（走 createdatabase 的种子），只有第二个及以后的用户、或者非注册入口创建的用户才出错。
+
+`oidc_create_user.php` 还有第二个坑：`$main_currency_id = 1; // Euro`
+是硬编码的，且第 107 行回填主货币时写死查 `code = 'EUR'`。
+两处都假设欧元，改动时必须一起改，否则用户会得到一个「货币表是中文、
+但主货币 id 指向不存在的行」的账号。
+
+**改法**：把货币表提到 `includes/default_names.php`，作为与分类、支付方式
+同级的单一来源：
+
+```php
+const DEFAULT_CURRENCIES = [ /* 11 项 */ ];
+function default_currencies($language) {
+    // 按语言解析货币名，与 default_categories() 同一套约定
+}
+```
+
+四个调用点全部改为读这个常量：
+
+| 文件 | 改动 |
+|---|---|
+| `registration.php` | 删掉 32 行内联数组 → `$currencies = DEFAULT_CURRENCIES;` |
+| `endpoints/admin/adduser.php` | 删掉 34 行内联数组 → `default_currencies($language)` |
+| `includes/oidc/oidc_create_user.php` | 删掉 34 行内联数组 → `default_currencies($language)`；主货币改为取 `DEFAULT_CURRENCIES[0]['id']`，回填查询改为按 code 查 |
+| `createdatabase.php` | 保留内联 SQL（建库期还没有语言，无法调用 `default_currencies()`） |
+
+**讽刺的是**：`default_names.php` 开头那段上游注释恰好解释了这个教训——
+分类和支付方式曾经也在三处重复，且都是英文，所以上游把它们收进了这个文件。
+但注释末尾明确写着「Currencies are deliberately not here」，货币被排除在外。
+这正是补丁第一版漏掉两条路径的原因。
+
+---
+
+### CN-PATCH 13 — 构建期自检
+
+既然"漏覆盖"的后果是静默的，就得让它在构建时就失败。
+
+`docker/expected-patches.txt` 列出仓库里所有带 `CN-PATCH` 标记的源文件
+（当前 17 个）。`Dockerfile.cn` 在**所有 COPY 之后**逐个检查：
+镜像里那个文件是否还带 `CN-PATCH` 标记。如果仓库里有补丁但没被 COPY 进来，
+镜像里就是上游原版，grep 不到标记 → 构建失败并列出文件名。
+
+**必须放在所有 COPY 之后**：第一版把它放在 `startup.sh` 的 COPY 之前，
+结果它自己报告 `startup.sh` 缺失。
+
+重新生成清单：
+
+```bash
+sh tools/gen-expected-patches.sh
+```
+
+新增补丁、或合并上游解决冲突后（冲突解决可能整段覆盖掉标记）都要重跑。
+
+---
+
+### 货币表：四条路径的一致性验证
+
+上表四个入口，逐个验证结果（2026-10-17，`wallos-cn:5.8.3`）：
+
+| 路径 | 验证方式 | 结果 |
+|---|---|---|
+| 注册页 | 临时空库完成真实注册 | 11 项，`CNY USD HKD JPY EUR GBP TWD SGD KRW AUD CAD` |
+| 管理员加用户 | 调用 `default_currencies('zh_cn')` | 11 项，首项「人民币」 |
+| OIDC 建号 | 检查占位主货币 + `default_currencies('zh_cn')` | 占位 `id=20 code=CNY`；11 项，首项「人民币」 |
+| 全新安装种子 | 空库建库后查 `user_id=1` | 11 项 |
+
+源码残留检查（应全部为「否」）：
+
+```
+adduser.php 还有 34 项数组?  否
+oidc 还有 34 项数组?         否
+oidc 还有硬编码 EUR?         否
+oidc 还有 main_currency=1?   否
+registration 还有 34 项?     否
+```
+
+---
+
 ### CN-PATCH 9 — 品牌文案
 
 `Wallos - Subscription Tracker` → `订阅台账 · SubDesk`（7 个文件）。
@@ -350,10 +448,27 @@ find . -name "*.php" -not -path "./libs/*" -not -path "./.git/*" \
 | `endpoints/cronjobs/createdatabase.php` | 低（只在加表/加种子时改） | 中 |
 | `includes/default_names.php` | 低 | 低 |
 | `registration.php` | 中 | 中 |
+| `endpoints/admin/adduser.php` | 低 | 低 |
+| `includes/oidc/oidc_create_user.php` | 低 | 低 |
 | `includes/i18n/getlang.php` | 低 | 低 |
 | `index.php` / `list_subscriptions.php` | 中（formatDate 两处） | 中 |
 | `save_user.php` | 低 | 低 |
 | 其余文案类 | 低 | 低 |
+
+### 合并后必做
+
+```bash
+# 1. 重新生成覆盖清单（冲突解决可能丢失 CN-PATCH 标记）
+sh tools/gen-expected-patches.sh
+git add docker/expected-patches.txt
+
+# 2. 构建。自检不通过会直接失败，不会产生一个"看起来正常"的错误镜像
+sudo docker build -f docker/Dockerfile.cn -t wallos-cn:<新版本> ..
+```
+
+**尤其是解决过冲突之后**：如果冲突解决时整段采用了上游版本，
+`CN-PATCH` 标记会消失，清单里就没有这个文件，自检也就查不出问题——
+所以第 1 步的清单重生成必须在解决冲突之后做，它会反映当时的真实标记状态。
 
 ### 降低冲突的三条实践
 
@@ -371,11 +486,37 @@ find . -name "*.php" -not -path "./libs/*" -not -path "./.git/*" \
 
 ## 四、验证清单
 
-每次合并上游或改完代码，按这个清单过一遍：
+每次合并上游或改完代码，按这个清单过一遍。
+
+### 最重要的一条：货币表有四条路径
+
+改任何与「新账号默认数据」相关的代码后，**必须把四条建号路径都测一遍**，
+只测注册页会漏掉后面三条：
+
+| # | 入口 | 怎么测 |
+|---|---|---|
+| 1 | 自助注册 `registration.php` | 临时空库注册一个用户 |
+| 2 | 管理员加用户 `admin/adduser.php` | 后台 → 管理员 → 添加用户 |
+| 3 | OIDC 首次登录 `oidc_create_user.php` | 配置 OIDC 后首次登录，或直接调 `default_currencies()` |
+| 4 | 全新安装 `createdatabase.php` | 删除 db 目录重启容器 |
+
+对应的快速检查 SQL：
+
+```sql
+-- 每个用户的货币数量与代码（正常应为 11 项）
+SELECT user_id, COUNT(*) AS n, GROUP_CONCAT(code,' ') AS codes
+FROM currencies GROUP BY user_id;
+
+-- 是否还有英文货币名
+SELECT code, name FROM currencies WHERE name GLOB '*[A-Za-z]*' AND name NOT IN (
+  'Chinese Yuan','US Dollar','Hong Kong Dollar','Japanese Yen','Euro',
+  'British Pound Sterling','New Taiwan Dollar','Singapore Dollar',
+  'South Korean Won','Australian Dollar','Canadian Dollar');
+```
 
 ### 已实测通过（2026-10-17）
 
-**存量实例**（`http://192.168.2.202:61032`，已有账号「子愚」）：
+**存量实例**（`http://192.168.2.202:61032`）：
 
 | 检查项 | 结果 |
 |---|---|
@@ -384,24 +525,24 @@ find . -name "*.php" -not -path "./libs/*" -not -path "./.git/*" \
 | 分类全部中文 | ✅ 影音娱乐 / 音乐 / 生活缴费 … 公益捐赠 |
 | 支付方式前 10 项 | ✅ 支付宝 / 微信支付 / 银联云闪付 / 信用卡 / 银行转账 / 自动扣款 / 现金·其他 / PayPal / Apple Pay / Google Pay |
 | 停用的支付方式 | 21 项（Klarna、SEPA、Skrill 等） |
-| 货币 | ✅ 11 种，全部中文名，人民币在列 |
+| 货币 | ✅ 11 种，全部中文名 |
 | 页面文案 | ✅ `<title>` 为「订阅台账 · SubDesk」，`window.lang = zh_cn` |
 
-**全新实例**（临时容器 + 空数据库，测试后已销毁）：
+**全新实例**（临时容器 + 空数据库，四条建号路径全测，测试后已销毁）：
 
 | 检查项 | 结果 |
 |---|---|
 | 注册表单字段 | ✅ 只有 `nickname`，无 `firstname` / `lastname` |
 | 表单标签 | ✅ 用户名 / 昵称 / 电子邮箱 / 密码 / 确认密码 / 主要货币 / 语言 |
 | 默认货币 | ✅ CNY 带 `selected` |
-| 货币下拉顺序 | ✅ 人民币 / 美元 / 港币 / 日元 / 欧元 … 共 11 项 |
 | 完整注册流程 | ✅ HTTP 302 跳转登录页 |
-| 注册后用户记录 | `firstname=小明`，`lastname` 空，`language=zh_cn`，`main_currency=20`(CNY) |
-| 注册后分类 | ✅ 17 项全中文 |
-| 注册后支付方式 | ✅ 支付宝 / 微信支付 / 银联云闪付 / 信用卡 / 银行转账 / 花呗 / 京东白条 / 虚拟信用卡 / 自动扣款 / 现金·其他 / PayPal / Apple Pay |
-| 注册后货币 | ✅ 11 项全中文，主货币 CNY |
+| 注册后用户记录 | `firstname=我自己`，`lastname` 空，`language=zh_cn`，`main_currency=20`(CNY) |
+| 注册后分类 / 支付方式 / 货币 | ✅ 17 / 13 / 11，全部中文 |
+| **管理员加用户路径** | ✅ `default_currencies('zh_cn')` 返回 11 项，首项「人民币」 |
+| **OIDC 路径** | ✅ 占位主货币 `id=20 code=CNY`，11 项中文 |
+| **构建期自检** | ✅ 「CN-PATCH 覆盖自检通过（17 个文件）」 |
 
-**语法检查**：19 个改动文件 `php -l` 全部通过。
+**语法检查**：所有改动文件 `php -l` 通过。
 
 ### 待人工确认（需要浏览器）
 
