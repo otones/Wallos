@@ -76,6 +76,14 @@ COPY manifest.php         /var/www/html/manifest.php
 # 调整见 styles.css 里 body>header 上方的层级约定表。
 COPY styles/styles.css    /var/www/html/styles/styles.css
 
+# ---- CN-PATCH 17：图片搜索源本地化 ---------------------------------------
+# DuckDuckGo / Brave 国内直连不通（实测 8 秒超时），换成必应中国 + 360 图片。
+# 同时给 jsDelivr 加多镜像回退，避免 cdn.jsdelivr.net 被墙时两个图标集一起失效。
+COPY endpoints/logos/search.php       /var/www/html/endpoints/logos/search.php
+COPY endpoints/logos/icon_search.php  /var/www/html/endpoints/logos/icon_search.php
+# 前端源列表也在这个补丁里（区块标题、查询顺序）
+COPY scripts/subscriptions.js         /var/www/html/scripts/subscriptions.js
+
 # ---- CN-PATCH 8：存量数据迁移脚本（上游镜像里没有这个目录） -------------
 COPY tools/cn-seed.php              /var/www/html/tools/cn-seed.php
 # [CN-PATCH 14] 修复 user.main_currency 指向不存在的货币行

@@ -518,11 +518,22 @@ function runLogoSearch(searchTerm) {
 
   // One section per source, queried in parallel and filled as each response lands
   const encodedSearchTerm = encodeURIComponent(searchTerm);
+  // [CN-PATCH 17] 图片搜索源本地化。
+  //
+  // 上游用 DuckDuckGo 和 Brave，国内直连不通（实测 8 秒超时），
+  // 所以这两个区块永远在转圈、最后报「获取图片结果时出错」。
+  // 换成实测可用的必应中国和 360 图片。
+  //
+  // selfh.st 和 Dashboard Icons 保留：它们走 jsDelivr 的 GitHub 镜像，
+  // 国内可达（实测 200 / 0.3-1.2s），而且是纯图标集，命中率比通用图片搜索高。
+  //
+  // 顺序按国内实际可用性和命中质量排：图标集优先（logo 场景更精准），
+  // 然后是必应（原图直链多），最后 360（数量多但广告图较多）。
   const sources = [
     { label: 'selfh.st', url: `endpoints/logos/icon_search.php?search=${encodedSearchTerm}&source=selfhst` },
     { label: 'Dashboard Icons', url: `endpoints/logos/icon_search.php?search=${encodedSearchTerm}&source=dashboardicons` },
-    { label: 'DuckDuckGo', url: `endpoints/logos/search.php?search=${encodedSearchTerm}&source=duckduckgo` },
-    { label: 'Brave', url: `endpoints/logos/search.php?search=${encodedSearchTerm}&source=brave` },
+    { label: '必应图片', url: `endpoints/logos/search.php?search=${encodedSearchTerm}&source=bing` },
+    { label: '360 图片', url: `endpoints/logos/search.php?search=${encodedSearchTerm}&source=so360` },
   ];
 
   // Google requires user-provided API credentials; the section only exists when configured

@@ -8,6 +8,8 @@
 
 endpoints/admin/adduser.php
 endpoints/cronjobs/createdatabase.php
+endpoints/logos/icon_search.php
+endpoints/logos/search.php
 endpoints/user/save_user.php
 includes/default_names.php
 includes/header.php
@@ -21,6 +23,7 @@ index.php
 profile.php
 registration.php
 scripts/registration.js
+scripts/subscriptions.js
 startup.sh
 styles/styles.css
 tools/cn-seed.php

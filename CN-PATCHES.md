@@ -149,6 +149,7 @@ v5.10.0 引入了两个需要单独验证的功能，因为它们改动了数据
 | CN-PATCH 14 | **修复主货币 id 错位**（日历页 TypeError） | `includes/default_names.php`、`registration.php`、`endpoints/admin/adduser.php`、`includes/oidc/oidc_create_user.php`、`includes/list_subscriptions.php`、`tools/fix-main-currency.php` | 修复 |
 | CN-PATCH 15 | **右上角显示昵称**而非用户名 | `includes/header.php` | 修复 |
 | CN-PATCH 16 | **层级修正**：用户菜单被订阅表单遮挡 | `styles/styles.css` | 修复 |
+| CN-PATCH 17 | **图片搜索源本地化**（DDG/Brave 国内不通） | `endpoints/logos/search.php`、`endpoints/logos/icon_search.php`、`scripts/subscriptions.js` | 替换源 |
 
 ---
 
@@ -628,7 +629,76 @@ body>header            z-index: 10   ← 创建层叠上下文
 
 ---
 
-### 货币表：四条路径的一致性验证上表四个入口，逐个验证结果（2026-10-17，`wallos-cn:5.8.3`）：
+### CN-PATCH 17 — 图片搜索源本地化
+
+**症状**：「网页搜索」弹窗里两个区块一直转圈，最后报「获取图片结果时出错」。
+selfh.st 和 Dashboard Icons 能出结果，DuckDuckGo 和 Brave 永远失败。
+
+**根因（实测，N150 容器内 8 秒超时）**：
+
+| 源 | 可达性 |
+|---|---|
+| DuckDuckGo | HTTP 000，8s 超时 |
+| Brave | HTTP 000，8s 超时 |
+
+不是代码 bug，是这两个站在国内直连不通。
+
+**替代方案调研**（同样实测）：
+
+| 候选 | 结果 | 采用 |
+|---|---|---|
+| 必应中国 `cn.bing.com` | 200 / 0.61s / 25 条 | ✅ |
+| 360 图片 `image.so.com` | 200 / 0.34s / 37 条 | ✅ |
+| 搜狗 `pic.sogou.com` | `{"status":1,"info":"forbid"}` | ❌ |
+| 百度 `image.baidu.com` | `{"antiFlag":1,"message":"Forbid spider access"}` | ❌ |
+
+搜狗和百度都需要前端 JS 生成的签名参数（搜狗要 `us`/`k`，百度要 `token`），
+逆向这些签名不稳定 —— 对方一改算法就失效。必应和 360 不需要签名。
+
+**没走官方 API**：必应 Image Search API 要在 Azure 门户注册、拿 key、
+每月 1000 次免费额度。对一个自托管应用来说，让用户为了搜个 logo 去注册
+Azure 账号不合理。**爬 HTML/JSON 是这里唯一现实的做法**，这也是上游
+选 DDG/Brave 的同一个理由。
+
+**改法**：
+
+1. `search.php` 重写：新增 `fetchBingChinaImages()`（解析 HTML 里的
+   `murl&quot;:&quot;…` 原图直链）和 `fetchSo360Images()`（解析 JSON 的
+   `list[].img`）。DDG/Brave 的代码保留但只在显式 `source=` 时调用，
+   中文部署不会付它们的 8 秒超时。
+2. `scripts/subscriptions.js` 的源列表换成：selfh.st → Dashboard Icons →
+   必应图片 → 360 图片。顺序按「logo 场景命中质量」排 —— 图标集最精准，
+   必应原图直链多，360 数量多但杂图较多。
+3. **给 jsDelivr 加多镜像回退**（`icon_search.php`）。selfh.st 和
+   Dashboard Icons 都托管在 GitHub、经 jsDelivr 访问，而上游只写死
+   `cdn.jsdelivr.net` —— 这个域名历史上多次被墙，一旦不可用两个图标集
+   会同时失效该区块。
+
+   实测镜像可达性：`cdn` 0.44s、`fastly` 0.43s、`gcore` 1.25s、
+   `testingcf` 1.22s、`statically` 超时、`ghproxy.net` 6.8s。
+   现在按此顺序尝试，成功一个就把索引记到临时文件，后续请求直接用，
+   不再逐个试超时。全部失败才退回 GitHub raw 代理，最后退回过期缓存。
+
+**实测结果（重新构建后）**：
+
+| 源 | 结果 |
+|---|---|
+| 必应图片 | ✅ 12 条，原图直链（知乎、新浪等 CDN） |
+| 360 图片 | ✅ 56 条 |
+| selfh.st | ✅ 命中 `netflix.png` |
+| Dashboard Icons | ✅ 命中 `netflix.png` |
+| DuckDuckGo（显式） | 仍失败，但已不在 UI 列表中 |
+
+**踩到的坑**：第一次改完直接测端点，返回的还是旧错误信息 —— 忘把
+`endpoints/logos/search.php` 和 `icon_search.php` 加进 Dockerfile 的
+COPY 清单。这次是构建期自检拦下来的（它发现 `scripts/subscriptions.js`
+也漏了）。自检机制连续第二次发挥了作用。
+
+---
+
+### 货币表：四条路径的一致性验证
+
+上表四个入口，逐个验证结果（2026-10-17，`wallos-cn:5.8.3`）：
 
 | 路径 | 验证方式 | 结果 |
 |---|---|---|
