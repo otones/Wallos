@@ -61,6 +61,70 @@ v5.10.0 引入了**多分类、多付款人**（`feat(subscriptions): allow seve
 | 右上角显示 | 「子愚」（昵称） |
 | 构建期自检 | 19 个文件通过 |
 
+### 新增功能实测：多分类与批量操作
+
+v5.10.0 引入了两个需要单独验证的功能，因为它们改动了数据结构
+（`subscription_categories` / `subscription_payers` 两张连接表），
+而我们的补丁（特别是 CN-PATCH 12 的货币表统一）碰的是相邻的代码。
+
+#### 多分类（`migration 000061`）
+
+**实现方式**：`subscriptions.category_id` 保留「第一个」分类作为主分类
+（排序、分组、通知、API 都读它，保证向后兼容），
+`subscription_categories` 存全量列表。多对多，不是改字段。
+
+**注意**：表单里的分类控件不是原生 `<select multiple>`，而是自定义的
+`.multi-select`（隐藏 `input[name=category_id]` + JS 维护逗号分隔值），
+因为原生多选在移动端体验很差。
+
+| 检查项 | 结果 |
+|---|---|
+| 创建时 `category_id=2,3`（逗号分隔） | ✅ `parsePayerIds()` 解析为两个 id |
+| `subscriptions.category_id` 存主分类 | ✅ 存 `2`（第一个） |
+| `subscription_categories` 存两行 | ✅ `2` 和 `3` |
+| 编辑接口返回 `category_ids` | ✅ `[2,3]`（数组），另有 `category_id=2` 兼容旧字段 |
+| 前端多选控件 | ✅ `id="category_select"`、`aria-multiselectable="true"`、18 个可选项 |
+| 按 `?category=2` 筛选 | ✅ 命中，不含其他订阅 |
+| **按 `?category=3` 筛选**（只存在于连接表） | ✅ **命中** —— 证明查询走的是 `EXISTS (SELECT 1 FROM subscription_categories ...)`，不是只看主分类 |
+| 按 `?category=6` 筛选 | ✅ 只命中单分类那条，无误报 |
+| 详情弹窗查表 | ✅ `"categories":{"1":"无分类","2":"影音娱乐",...}` 17 项全中文 |
+
+#### 批量操作（`endpoints/subscriptions/bulkedit.php`）
+
+**支持 6 种操作**：启用通知、关闭通知、设置提醒天数、设置分类、设置支付方式、删除。
+前端是「批量操作」按钮 → 工具栏（全选 / 操作下拉 / 值下拉 / 应用）。
+
+| 操作 | 结果 |
+|---|---|
+| `enable_notifications` | ✅ `notify` 0→1 |
+| `disable_notifications` | ✅（同路径） |
+| `set_notify_days=7` | ✅ `notify=1, notify_days_before=7` |
+| `set_category=6` | ✅ 主分类 2→6，**连接表也从 `[2,3]` 全量替换为 `[6]`** |
+| `set_payment_method` | ✅ `payment_method_id` 更新 |
+| `delete` | ✅ 订阅删除，**连接表残留 0 行**（上游专门处理了「SQLite 会复用 id」的问题） |
+
+**安全测试**：
+
+| 攻击面 | 结果 |
+|---|---|
+| 改别人的订阅（id=999999） | ✅ 拒绝，`success:false`（先校验 id 全部属于当前用户） |
+| 非法 action（`drop_table`） | ✅ 拒绝（白名单 `$updates` 数组） |
+| 缺 CSRF token | ✅ **HTTP 403**（不是 200 + success:false，上游提交 `a924db3` 专门改的） |
+| `notify_days=999`（越界） | ✅ 拒绝（范围 -1..180） |
+
+**UI 中文化**：批量工具栏的「批量操作」「全选」「选择操作」「设置分类」
+「设置支付方式」全部显示中文 —— 这些键是上游 v5.10.0 新加的，
+`zh_cn.php` 里已自带，不需要我们补。
+
+#### 多付款人（`migration 000060`）
+
+结构与多分类完全对称（`subscription_payers` 连接表 + `subscriptions.payer_user_id` 主付款人），
+实现走同一套 `parsePayerIds()` / `saveSubscriptionPayers()`。本次未单独压测，
+因为代码路径与已验证的多分类共用。
+
+**测试数据已清理**：测试结束后 `subscriptions` / `subscription_categories` /
+`subscription_payers` 三张表都是 0 行，分类 17、货币 11 保持原样。
+
 ---
 
 ## 一、改动清单
