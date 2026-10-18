@@ -1,0 +1,27 @@
+# [CN-PATCH 13] 镜像必须覆盖的文件清单。
+#
+# 自动生成，请勿手改。Dockerfile.cn 的构建期自检会逐个检查这些文件是否
+# 真的被 COPY 进镜像，漏一个就构建失败 —— 因为漏覆盖的后果是静默的：
+# 镜像能构建、容器能启动，只有走那条代码路径的用户会拿到错误数据。
+#
+# 重新生成：sh tools/gen-expected-patches.sh
+
+endpoints/admin/adduser.php
+endpoints/cronjobs/createdatabase.php
+endpoints/user/save_user.php
+includes/default_names.php
+includes/header.php
+includes/i18n/en.php
+includes/i18n/getlang.php
+includes/i18n/languages.php
+includes/i18n/zh_cn.php
+includes/list_subscriptions.php
+includes/oidc/oidc_create_user.php
+index.php
+profile.php
+registration.php
+scripts/registration.js
+startup.sh
+styles/styles.css
+tools/cn-seed.php
+tools/fix-main-currency.php

@@ -9,6 +9,10 @@ $i18n = [
     "password" => "Password",
     "firstname" => "First name",
     "lastname" => "Last name",
+    // [CN-PATCH 5] 中文分支把姓/名合并为「昵称」，英文文件也要有这个键，
+    // 否则英文用户切到该表单时 translate() 会输出 [i18n String Missing]。
+    "nickname" => "Nickname",
+    "nickname_placeholder" => "Shown as a greeting on the home page; can be left empty",
     "email" => "Email",
     "confirm_password" => "Confirm Password",
     "main_currency" => "Main Currency",

@@ -76,42 +76,13 @@ if (isset($_COOKIE['colorTheme'])) {
     $colorTheme = sanitize_color_theme($_COOKIE['colorTheme']);
 }
 
-$currencies = [
-    ['id' => 1, 'name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
-    ['id' => 2, 'name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
-    ['id' => 3, 'name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
-    ['id' => 4, 'name' => 'Bulgarian Lev', 'symbol' => 'лв', 'code' => 'BGN'],
-    ['id' => 5, 'name' => 'Czech Republic Koruna', 'symbol' => 'Kč', 'code' => 'CZK'],
-    ['id' => 6, 'name' => 'Danish Krone', 'symbol' => 'kr', 'code' => 'DKK'],
-    ['id' => 7, 'name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
-    ['id' => 8, 'name' => 'Hungarian Forint', 'symbol' => 'Ft', 'code' => 'HUF'],
-    ['id' => 9, 'name' => 'Polish Zloty', 'symbol' => 'zł', 'code' => 'PLN'],
-    ['id' => 10, 'name' => 'Romanian Leu', 'symbol' => 'lei', 'code' => 'RON'],
-    ['id' => 11, 'name' => 'Swedish Krona', 'symbol' => 'kr', 'code' => 'SEK'],
-    ['id' => 12, 'name' => 'Swiss Franc', 'symbol' => 'Fr', 'code' => 'CHF'],
-    ['id' => 13, 'name' => 'Icelandic Króna', 'symbol' => 'kr', 'code' => 'ISK'],
-    ['id' => 14, 'name' => 'Norwegian Krone', 'symbol' => 'kr', 'code' => 'NOK'],
-    ['id' => 15, 'name' => 'Russian Ruble', 'symbol' => '₽', 'code' => 'RUB'],
-    ['id' => 16, 'name' => 'Turkish Lira', 'symbol' => '₺', 'code' => 'TRY'],
-    ['id' => 17, 'name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
-    ['id' => 18, 'name' => 'Brazilian Real', 'symbol' => 'R$', 'code' => 'BRL'],
-    ['id' => 19, 'name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
-    ['id' => 20, 'name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
-    ['id' => 21, 'name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
-    ['id' => 22, 'name' => 'Indonesian Rupiah', 'symbol' => 'Rp', 'code' => 'IDR'],
-    ['id' => 23, 'name' => 'Israeli New Sheqel', 'symbol' => '₪', 'code' => 'ILS'],
-    ['id' => 24, 'name' => 'Indian Rupee', 'symbol' => '₹', 'code' => 'INR'],
-    ['id' => 25, 'name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
-    ['id' => 26, 'name' => 'Mexican Peso', 'symbol' => 'Mex$', 'code' => 'MXN'],
-    ['id' => 27, 'name' => 'Malaysian Ringgit', 'symbol' => 'RM', 'code' => 'MYR'],
-    ['id' => 28, 'name' => 'New Zealand Dollar', 'symbol' => 'NZ$', 'code' => 'NZD'],
-    ['id' => 29, 'name' => 'Philippine Peso', 'symbol' => '₱', 'code' => 'PHP'],
-    ['id' => 30, 'name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
-    ['id' => 31, 'name' => 'Thai Baht', 'symbol' => '฿', 'code' => 'THB'],
-    ['id' => 32, 'name' => 'South African Rand', 'symbol' => 'R', 'code' => 'ZAR'],
-    ['id' => 33, 'name' => 'Ukrainian Hryvnia', 'symbol' => '₴', 'code' => 'UAH'],
-    ['id' => 34, 'name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
-];
+// [CN-PATCH 6b / 12] 货币表统一由 includes/default_names.php 的 DEFAULT_CURRENCIES
+// 提供，不再在这里维护副本。
+//
+// 这里原本有一份独立的 34 项硬编码数组，admin/adduser.php 和
+// oidc_create_user.php 各自还有一份。四处副本没有任何机制保证一致，
+// 导致「注册页」和「管理员加用户」写入的货币不同。现在只有一份定义。
+$currencies = DEFAULT_CURRENCIES;
 
 $passwordMismatch = false;
 $usernameExists = false;
@@ -120,14 +91,27 @@ $registrationFailed = false;
 $hasErrors = false;
 if (isset($_POST['username'])) {
     $username = validate($_POST['username']);
-    $firstname = validate($_POST['firstname']);
-    $lastname = validate($_POST['lastname']);
+    // [CN-PATCH 5] 表单已改为单个「昵称」字段。这里做兼容：
+    // 新表单提交 nickname，旧表单/API 调用仍可能提交 firstname/lastname。
+    $firstname = validate($_POST['nickname'] ?? ($_POST['firstname'] ?? ''));
+    $lastname = '';
     $email = validate($_POST['email']);
     $password = $_POST['password'];
     $confirm_password = $_POST['confirm_password'];
     $main_currency = $_POST['main_currency'];
-    $main_currency_index = array_search($main_currency, array_column($currencies, 'code'));
-    $main_currency_id = $currencies[$main_currency_index]['id'];
+    // [CN-PATCH 14] 这里原本是 $currencies[$main_currency_index]['id']，
+    // 取的是 DEFAULT_CURRENCIES 里硬编码的上游行 id。那个 id 只是抄过来的数字，
+    // 和本实例数据库里真正的行 id 没有任何关系 ——
+    // currencies.id 是 AUTOINCREMENT，由插入顺序决定。
+    //
+    // 结果是 user.main_currency 被写成 20（CNY 在上游的 id），而新库里
+    // CNY 的实际 id 是 1，于是 calendar.php 的 INNER JOIN 匹配不到行，
+    // 货币代码为 null，统计卡片直接抛 TypeError。
+    //
+    // 正确做法：INSERT user 时这里只放一个占位值，真正的 id 由下面
+    // 「Retrieve main currency id」按 code 查出来再 UPDATE 回去。
+    // 占位值用 0 而不是某个真实 id，避免它在回填失败时"碰巧指到某个货币"。
+    $main_currency_id = 0;
     $language = $_POST['language'];
     $avatar = "images/avatars/0.svg";
 
@@ -210,9 +194,13 @@ if (isset($_POST['username'])) {
                 }
 
                 // Add currencies for that user
+                // [CN-PATCH 6] 写入数据库时就存中文名，而不是等界面翻译。
+                // 原因是「设置 → 货币」页把 name 当普通文本编辑框直接展示，
+                // 如果表里存 "Chinese Yuan"，用户在那里看到的仍是英文。
+                // 这里在注册期做一次性映射，之后 name 就是可自由编辑的普通字段。
                 $query = "INSERT INTO currencies (name, symbol, code, rate, user_id) VALUES (:name, :symbol, :code, :rate, :user_id)";
                 $stmt = $db->prepare($query);
-                foreach ($currencies as $currency) {
+                foreach (default_currencies($language) as $currency) {
                     $stmt->bindValue(':name', $currency['name'], SQLITE3_TEXT);
                     $stmt->bindValue(':symbol', $currency['symbol'], SQLITE3_TEXT);
                     $stmt->bindValue(':code', $currency['code'], SQLITE3_TEXT);
@@ -222,12 +210,24 @@ if (isset($_POST['username'])) {
                 }
 
                 // Retrieve main currency id
+                //
+                // [CN-PATCH 14] 这是 user.main_currency 的唯一正确来源：
+                // 按 ISO 代码查本实例数据库里刚插入的那一行。
+                // currencies.id 是 AUTOINCREMENT，常量无法预知，不能写死。
                 $query = "SELECT id FROM currencies WHERE code = :code AND user_id = :user_id";
                 $stmt = $db->prepare($query);
                 $stmt->bindValue(':code', $main_currency, SQLITE3_TEXT);
                 $stmt->bindValue(':user_id', $userId, SQLITE3_INTEGER);
                 $result = $stmt->execute();
                 $currency = $result->fetchArray(SQLITE3_ASSOC);
+
+                if ($currency === false) {
+                    // 理论上不会发生：上面的循环刚插入了全部 DEFAULT_CURRENCIES。
+                    // 但如果真发生了（比如 $main_currency 是伪造的表单值），
+                    // 静默把 0 写进 user.main_currency 会让整个实例的货币
+                    // 显示全部失效，且很难查。这里直接失败，留下明确线索。
+                    die("无法确定主货币 '" . htmlspecialchars($main_currency) . "' 在数据库中的 id");
+                }
 
                 // Update user main currency
                 $query = "UPDATE user SET main_currency = :main_currency WHERE id = :user_id";
@@ -286,7 +286,7 @@ if (isset($_POST['username'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="<?= $theme == "light" ? "#FFFFFF" : "#12151C" ?>" id="theme-color" />
     <meta name="apple-mobile-web-app-title" content="Wallos">
-    <title>Wallos - Subscription Tracker</title>
+    <title>订阅台账 · SubDesk</title>
     <link rel="icon" type="image/png" href="images/icon/favicon.ico" sizes="16x16">
     <link rel="apple-touch-icon" href="images/icon/apple-touch-icon.png">
     <link rel="apple-touch-icon" sizes="152x152" href="images/icon/apple-touch-icon-152.png">
@@ -324,11 +324,11 @@ if (isset($_POST['username'])) {
                 <h1><?= translate('auth_tagline', $i18n) ?></h1>
                 <p><?= translate('auth_tagline_sub', $i18n) ?></p>
             </div>
-            <div class="auth-brand-footer">Wallos &mdash; Subscription Tracker</div>
+            <div class="auth-brand-footer">订阅台账 &mdash; 会员与订阅管理</div>
         </aside>
         <section class="container wide">
             <header>
-                <div class="logo-image" title="Wallos - Subscription Tracker">
+                <div class="logo-image" title="订阅台账 · SubDesk">
                     <?php include "images/siteicons/svg/logo.php"; ?>
                 </div>
                 <p>
@@ -340,13 +340,24 @@ if (isset($_POST['username'])) {
                     <label for="username"><?= translate('username', $i18n) ?>:</label>
                     <input type="text" id="username" name="username" autocomplete="username" required>
                 </div>
+                <?php
+                // [CN-PATCH 5] 去掉独立的「姓 / 名」两个字段，合并为一个「昵称」。
+                //
+                // 上游把 firstname / lastname 分开，是欧美命名习惯（Given name /
+                // Family name）。中文场景下这两个词的对应关系本身就是错的
+                // （"first name" 译成「名」、"last name」译成「姓」，但表单顺序是
+                // 名在前姓在后，和中文习惯相反），而且大部分用户根本没有英文姓名的概念。
+                //
+                // 这里保留数据库两列不迁移（零风险），只改表单：
+                // 昵称写入 firstname，lastname 恒为空字符串。
+                // index.php 的问候语是 $user['firstname'] ?? $user['username']，
+                // header.php 也走同样的回退，所以填了昵称就显示昵称，
+                // 没填就回退用户名，不会出现空白。
+                ?>
                 <div class="form-group">
-                    <label for="firstname"><?= translate('firstname', $i18n) ?>:</label>
-                    <input type="text" id="firstname" name="firstname" autocomplete="given-name">
-                </div>
-                <div class="form-group">
-                    <label for="lastname"><?= translate('lastname', $i18n) ?>:</label>
-                    <input type="text" id="lastname" name="lastname" autocomplete="family-name">
+                    <label for="nickname"><?= translate('nickname', $i18n) ?>:</label>
+                    <input type="text" id="nickname" name="nickname" autocomplete="nickname"
+                        placeholder="<?= translate('nickname_placeholder', $i18n) ?>">
                 </div>
                 <div class="form-group">
                     <label for="email"><?= translate('email', $i18n) ?>:</label>
@@ -364,9 +375,19 @@ if (isset($_POST['username'])) {
                     <label for="currency"><?= translate('main_currency', $i18n) ?>:</label>
                     <select id="currency" name="main_currency" placeholder="Currency">
                         <?php
+                        // [CN-PATCH 6] 默认选中人民币。上游这里没有任何 option 带
+                        // selected，浏览器就选第一个（Euro），新用户很容易漏改，
+                        // 之后所有统计都按欧元折算。
                         foreach ($currencies as $currency) {
+                            $currencySelected = ($currency['code'] === 'CNY') ? 'selected' : '';
+                            $localizedName = translate('currency_' . strtolower($currency['code']), $i18n);
+                            if ($localizedName === '[i18n String Missing]') {
+                                $localizedName = $currency['name'];
+                            }
                             ?>
-                            <option value="<?= $currency['code'] ?>"><?= $currency['name'] ?></option>
+                            <option value="<?= $currency['code'] ?>" <?= $currencySelected ?>>
+                                <?= $localizedName ?> (<?= $currency['code'] ?>)
+                            </option>
                             <?php
                         }
                         ?>

@@ -120,12 +120,44 @@ h3 {
 body>header {
   position: sticky;
   top: 0;
-  z-index: 10;
+  /* [CN-PATCH 16] 层叠层级。取值依据见下方的层级约定表。 */
+  z-index: 25;
   border-bottom: 1px solid var(--box-border-color);
   background-color: rgba(var(--header-background-color-rgb), 0.85);
   -webkit-backdrop-filter: blur(12px) saturate(160%);
   backdrop-filter: blur(12px) saturate(160%);
 }
+
+/* [CN-PATCH 16] 层叠层级约定（z-index）。
+ *
+ * 问题：打开「添加订阅」表单时，右上角的用户菜单被盖住，只露出右上角一窄条。
+ *
+ * 原因：右上角菜单 .dropdown-content 的 z-index 是 5，但它是 body>header
+ * 的后代，而 header 自己只有 10 —— 后代的 5 只在 header 内部比较，实际
+ * 效果被限制在 header 的 10 这一层。而 .subscription-form 是 20，
+ * 在全页范围内高于 header，于是压住了整个菜单。
+ *
+ * 修法不是调大 .dropdown-content 的 5（那样没用，它仍在 header 之内），
+ * 而是调整 header 自身的层级。但 header 不能无限抬高 —— 还有两层必须
+ * 位于它之上：全屏的图标搜索，以及真正的模态遮罩。
+ *
+ * 层级约定（改任何浮层前先对照此表，改完同步更新）：
+ *
+ *   20   内容型弹窗：.subscription-form、.subscription-modal、
+ *        .subscription-details、.totp-popup
+ *   25   body>header（含右上角用户菜单）
+ *   30   .icon-search-backdrop / .logo-search-backdrop
+ *   31   .icon-search / .logo-search
+ *   99   .modal-backdrop（通用模态遮罩，含注册页的数据库恢复）
+ *
+ * 三条约束，换来的效果：
+ *   1. header > 20 —— 任何内容弹窗打开时，右上角菜单仍可点。
+ *      尤其「退出登录」，被弹窗挡住会逼用户先关弹窗才能退出。
+ *   2. header < 30 —— 图标搜索是全屏取色/选图界面，必须盖住页头，
+ *      否则面板顶部会被 sticky header 切掉一条。
+ *   3. header < 99 —— .modal-backdrop 是真正的模态遮罩，出现时
+ *      应当捕获所有交互，包括页头。
+ */
 
 body>header>.contain {
   display: flex;
@@ -196,6 +228,12 @@ header .logo .logo-image svg {
   border: 1px solid var(--box-border-color);
   min-width: 130px;
   box-shadow: var(--shadow-pop);
+  /* [CN-PATCH 16] 这个 5 只在 body>header 内部比较，实际能盖住哪些元素
+   * 由 header 自己的 z-index 决定（现在是 25）。
+   *
+   * 把它调大没有意义 —— 曾误以为「菜单被添加订阅表单盖住」是这里太小，
+   * 实际是 header 的 10 低于表单的 20，整个 header 连菜单一起被压在下面。
+   * 真正的修正在 body>header 上，层级约定表也写在那里。 */
   z-index: 5;
   width: max-content;
   border-radius: 12px;
@@ -2013,7 +2051,10 @@ textarea.thin {
   height: 100%;
   background-color: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(3px);
-  z-index: 21;
+  /* [CN-PATCH 16] 原值 21。页头现在提到 25（见 body>header），
+   * 这个全屏遮罩必须仍在页头之上，否则弹出的取色/选图面板顶部
+   * 会被 sticky header 切掉一条。按层级约定表提到 30。 */
+  z-index: 30;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.25s ease, visibility 0s linear 0.25s;
@@ -2043,7 +2084,10 @@ textarea.thin {
   box-shadow: var(--shadow-pop);
   background-color: var(--box-background-color);
   box-sizing: border-box;
-  z-index: 22;
+  /* [CN-PATCH 16] 原值 22。与上方的遮罩同步上调一级：
+   * 面板必须盖在遮罩（30）之上，同时盖住页头（25）。
+   * 见 body>header 上方的层级约定表。 */
+  z-index: 31;
 }
 
 .icon-search {

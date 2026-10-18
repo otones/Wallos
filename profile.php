@@ -80,14 +80,14 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                                 disabled>
                         </div>
                         <div class="form-group">
-                            <label for="firstname"><?= translate('firstname', $i18n) ?>:</label>
-                            <input type="text" id="firstname" name="firstname" autocomplete="given-name"
+                            <?php
+                            // [CN-PATCH 5] 姓/名合并为「昵称」。存储上继续用 firstname 列，
+                            // lastname 不再出现在界面上。
+                            ?>
+                            <label for="nickname"><?= translate('nickname', $i18n) ?>:</label>
+                            <input type="text" id="nickname" name="nickname" autocomplete="nickname"
+                                placeholder="<?= translate('nickname_placeholder', $i18n) ?>"
                                 value="<?= htmlspecialchars($userData['firstname']) ?>">
-                        </div>
-                        <div class="form-group">
-                            <label for="lastname"><?= translate('lastname', $i18n) ?>:</label>
-                            <input type="text" id="lastname" name="lastname" autocomplete="family-name"
-                                value="<?= htmlspecialchars($userData['lastname']) ?>">
                         </div>
                         <div class="form-group">
                             <label for="email"><?= translate('email', $i18n) ?>:</label>

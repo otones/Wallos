@@ -19,7 +19,16 @@ require_once __DIR__ . '/../i18n/languages.php';
 $language = resolve_language($userInfo['locale'] ?? null);
 $avatar = "images/avatars/0.svg";
 $budget = 0;
-$main_currency_id = 1; // Euro
+// [CN-PATCH 12 / 14] 主货币不再硬编码为 1（Euro）。
+//
+// 这里的值只是 INSERT user 时的占位：currencies 表要到下面才插入，
+// 插入完再由「回填主货币」那一步按 ISO 代码查出真实的行 id。
+//
+// 用 0 而不是某个具体 id：currencies.id 是 AUTOINCREMENT，由插入顺序决定，
+// 本文件无法预知。占位值写成 0，回填失败时会明确表现为「指向不存在的行」，
+// 而不是"碰巧指到某个货币"这种更难察觉的错误。
+require_once __DIR__ . '/../default_names.php';
+$main_currency_id = 0;
 $password = bin2hex(random_bytes(16)); // 32-character random password
 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
@@ -78,42 +87,14 @@ foreach (default_payment_methods($language) as $index => $method) {
 }
 
 // Currencies
-$currencies = [
-    ['name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
-    ['name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
-    ['name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
-    ['name' => 'Bulgarian Lev', 'symbol' => 'лв', 'code' => 'BGN'],
-    ['name' => 'Czech Republic Koruna', 'symbol' => 'Kč', 'code' => 'CZK'],
-    ['name' => 'Danish Krone', 'symbol' => 'kr', 'code' => 'DKK'],
-    ['name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
-    ['name' => 'Hungarian Forint', 'symbol' => 'Ft', 'code' => 'HUF'],
-    ['name' => 'Polish Zloty', 'symbol' => 'zł', 'code' => 'PLN'],
-    ['name' => 'Romanian Leu', 'symbol' => 'lei', 'code' => 'RON'],
-    ['name' => 'Swedish Krona', 'symbol' => 'kr', 'code' => 'SEK'],
-    ['name' => 'Swiss Franc', 'symbol' => 'Fr', 'code' => 'CHF'],
-    ['name' => 'Icelandic Króna', 'symbol' => 'kr', 'code' => 'ISK'],
-    ['name' => 'Norwegian Krone', 'symbol' => 'kr', 'code' => 'NOK'],
-    ['name' => 'Russian Ruble', 'symbol' => '₽', 'code' => 'RUB'],
-    ['name' => 'Turkish Lira', 'symbol' => '₺', 'code' => 'TRY'],
-    ['name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
-    ['name' => 'Brazilian Real', 'symbol' => 'R$', 'code' => 'BRL'],
-    ['name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
-    ['name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
-    ['name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
-    ['name' => 'Indonesian Rupiah', 'symbol' => 'Rp', 'code' => 'IDR'],
-    ['name' => 'Israeli New Sheqel', 'symbol' => '₪', 'code' => 'ILS'],
-    ['name' => 'Indian Rupee', 'symbol' => '₹', 'code' => 'INR'],
-    ['name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
-    ['name' => 'Mexican Peso', 'symbol' => 'Mex$', 'code' => 'MXN'],
-    ['name' => 'Malaysian Ringgit', 'symbol' => 'RM', 'code' => 'MYR'],
-    ['name' => 'New Zealand Dollar', 'symbol' => 'NZ$', 'code' => 'NZD'],
-    ['name' => 'Philippine Peso', 'symbol' => '₱', 'code' => 'PHP'],
-    ['name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
-    ['name' => 'Thai Baht', 'symbol' => '฿', 'code' => 'THB'],
-    ['name' => 'South African Rand', 'symbol' => 'R', 'code' => 'ZAR'],
-    ['name' => 'Ukrainian Hryvnia', 'symbol' => '₴', 'code' => 'UAH'],
-    ['name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
-];
+//
+// [CN-PATCH 12 / 14] 这里原本是独立的 34 项硬编码数组，且 main_currency_id
+// 上面硬编码为 1（Euro）—— 通过 OIDC 创建的用户拿到的是欧元账户
+// + 34 种英文货币。现在改为读 DEFAULT_CURRENCIES，货币名按语言解析。
+//
+// 注意这里不再从数组里取 id：数组本身不带 id（见 default_names.php 的说明），
+// 真实行 id 由下面「回填主货币」按 ISO 代码查出来。
+$currencies = default_currencies($language);
 
 $stmt = $db->prepare("INSERT INTO currencies (name, symbol, code, rate, user_id) 
                       VALUES (:name, :symbol, :code, :rate, :user_id)");
@@ -126,17 +107,29 @@ foreach ($currencies as $currency) {
     $stmt->execute();
 }
 
-// Get actual Euro currency ID
-$stmt = $db->prepare("SELECT id FROM currencies WHERE code = 'EUR' AND user_id = :user_id");
+// 回填主货币的真实行 id
+//
+// [CN-PATCH 12 / 14] 这里原本硬编码查 'EUR'，与上面「主货币硬编码为 1（Euro）」
+// 是同一个假设的两半。现在按 DEFAULT_CURRENCIES 第一项的 ISO 代码查真实 id ——
+// 这是唯一可靠的来源，因为 currencies.id 是 AUTOINCREMENT，本文件无法预知。
+$mainCurrencyCode = DEFAULT_CURRENCIES[0]['code'];
+$stmt = $db->prepare("SELECT id FROM currencies WHERE code = :code AND user_id = :user_id");
+$stmt->bindValue(':code', $mainCurrencyCode, SQLITE3_TEXT);
 $stmt->bindValue(':user_id', $newUserId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 $currency = $result->fetchArray(SQLITE3_ASSOC);
-if ($currency) {
-    $stmt = $db->prepare("UPDATE user SET main_currency = :main_currency WHERE id = :user_id");
-    $stmt->bindValue(':main_currency', $currency['id'], SQLITE3_INTEGER);
-    $stmt->bindValue(':user_id', $newUserId, SQLITE3_INTEGER);
-    $stmt->execute();
+
+if ($currency === false) {
+    // 上面刚插入了全部 DEFAULT_CURRENCIES，查不到说明插入失败。
+    // 静默留下 main_currency = 0 会让整个实例的货币显示失效且难查，
+    // 这里明确失败。
+    die("OIDC 建号后无法确定主货币 '" . $mainCurrencyCode . "' 的 id");
 }
+
+$stmt = $db->prepare("UPDATE user SET main_currency = :main_currency WHERE id = :user_id");
+$stmt->bindValue(':main_currency', $currency['id'], SQLITE3_INTEGER);
+$stmt->bindValue(':user_id', $newUserId, SQLITE3_INTEGER);
+$stmt->execute();
 
 $userData['main_currency'] = $currency['id'];
 

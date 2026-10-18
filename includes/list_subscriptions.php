@@ -149,8 +149,21 @@ function formatDate($date, $lang = 'en')
     $currentYear = date('Y');
     $dateYear = date('Y', strtotime($date));
 
-    // Determine the date format based on whether the year matches the current year
-    $dateFormat = ($currentYear == $dateYear) ? 'MMM d' : 'MMM yyyy';
+    // [CN-PATCH 7] 中文日期格式。
+    //
+    // 上游固定用 ICU 的 'MMM d'（如 "Oct 17"）和 'MMM yyyy'（如 "Oct 2025"），
+    // 中文 locale 下会渲染成 "10月 17" 这种夹生格式。
+    // 这里对中文单独用更符合习惯的模式：当年显示 "10月17日"，跨年显示 "2025年10月"。
+    //
+    // 注意：上游在 includes/list_subscriptions.php 和 index.php 里各有一份
+    // 同名函数，必须同步修改，否则首页和订阅列表会显示两种不同的日期格式。
+    $isChinese = in_array(strtolower(substr((string) $lang, 0, 2)), ['zh'], true);
+
+    if ($isChinese) {
+        $dateFormat = ($currentYear == $dateYear) ? 'M月d日' : 'yyyy年M月';
+    } else {
+        $dateFormat = ($currentYear == $dateYear) ? 'MMM d' : 'MMM yyyy';
+    }
 
     // Try to create an IntlDateFormatter; if it fails, fallback to 'en'
     try {
@@ -437,7 +450,20 @@ $row = $result->fetchArray(SQLITE3_ASSOC);
 if ($row !== false) {
     $mainCurrencyId = $row['main_currency'];
 } else {
-    $mainCurrencyId = $currencies[1]['id'];
+    // [CN-PATCH 14] 这里原本是 $currencies[1]['id']：按数组下标取「第一个货币」
+    // 的 id。$currencies 来自数据库，下标 0 是第一行，所以这行取的是第二行，
+    // 而且它假设数组里带着 'id' 键 —— 我们的 DEFAULT_CURRENCIES 不再带 id，
+    // 这个下标一旦被走到就会取到 null。
+    //
+    // 语义上想表达的是「用户没设主货币时，用列表里的第一个（人民币）」。
+    // 改成查真实 id，与 registration.php 的回填逻辑一致。
+    $mainCurrencyId = null;
+    $fallback = $db->prepare("SELECT id FROM currencies WHERE user_id = :userId ORDER BY id ASC LIMIT 1");
+    $fallback->bindValue(':userId', $userId, SQLITE3_INTEGER);
+    $fallbackRow = $fallback->execute()->fetchArray(SQLITE3_ASSOC);
+    if ($fallbackRow !== false) {
+        $mainCurrencyId = $fallbackRow['id'];
+    }
 }
 
 ?>

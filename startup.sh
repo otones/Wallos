@@ -66,6 +66,20 @@ sleep 1
 # Perform any database migrations
 /usr/local/bin/php /var/www/html/endpoints/db/migrate.php
 
+# [CN-PATCH 8] 存量数据中文化：把仍然等于上游英文默认值的分类、支付方式、
+# 货币改名成中文，并停用国内用不到的支付渠道。
+# 幂等：只匹配「名字仍然精确等于英文默认值」的行，重复执行无副作用。
+/usr/local/bin/php /var/www/html/tools/cn-seed.php || echo "cn-seed skipped"
+
+# [CN-PATCH 14] 修复 user.main_currency 指向不存在的货币行。
+#
+# 这是 CN-PATCH 12 引入的 bug 的补救：曾经把上游的硬编码行 id（CNY=20）
+# 写进 user.main_currency，而本实例的 currencies.id 是 1..11。
+# 症状是日历页统计卡片抛 TypeError（货币代码取到 null）。
+#
+# 幂等：只处理指向不存在行的用户，正常用户不受影响。
+/usr/local/bin/php /var/www/html/tools/fix-main-currency.php || echo "fix-main-currency skipped"
+
 # Change permissions on the database directory
 chmod -R 755 /var/www/html/db/
 chown -R www-data:www-data /var/www/html/db/

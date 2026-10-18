@@ -18,9 +18,20 @@
   Brand names - PayPal, SEPA, Klarna - are the same word in every language and
   stay literal.
 
-  Currencies are deliberately not here. Their names are a separate list with a
-  separate problem (a currency is identified by its ISO code, not by its name),
-  and folding them in would make this change about something else.
+  Currencies were deliberately left out of this file: their names are a separate
+  list with a separate problem (a currency is identified by its ISO code, not by
+  its name), and folding them in would have made the original change about
+  something else.
+
+  [CN-PATCH 12] That decision turned out to be the reason a localization patch
+  missed two of the four places an account is created. The four copies of the
+  currency list - createdatabase.php, registration.php, admin/adduser.php and
+  oidc_create_user.php - have to agree, and nothing made them agree. Patching two
+  of them left new accounts created through the admin panel or an identity
+  provider with 34 English currencies. DEFAULT_CURRENCIES below is the single
+  definition; the four call sites read it instead of carrying their own copy.
+  Same contract as the categories: what is stored is ordinary editable text, and
+  the ISO code, not the name, is the identity.
 */
 
 /**
@@ -60,40 +71,82 @@ const DEFAULT_CATEGORY_KEYS = [
  * translation "key". A brand is the same word in every language, so it keeps a
  * literal "name".
  *
+ * [CN-PATCH 2] 国内使用场景：这张表决定「设置 → 支付方式」的初始列表，
+ * 也决定订阅表单里支付方式下拉框的顺序。
+ *
+ * 上游默认是欧洲/北美方案（PayPal、SEPA、Klarna、GiroPay、iDeal…），
+ * 国内用户基本用不上。这里改成以支付宝/微信/银联/银行卡/花呗/白条为主，
+ * 海外那几个（PayPal / Apple Pay / Google Pay）放在最后保留，
+ * 因为港区 Netflix、美区 ChatGPT 这类订阅仍然需要。
+ *
+ * 注意：没有对应图标的条目复用最接近的内置图标，
+ * 否则设置页会显示裂图。图标名对应 images/uploads/icons/ 下的文件。
+ *
  * @var array<int, array{name?: string, key?: string, icon: string}>
  */
 const DEFAULT_PAYMENT_METHODS = [
-    ['name' => 'PayPal', 'icon' => 'images/uploads/icons/paypal.png'],
+    ['name' => '支付宝', 'icon' => 'images/uploads/icons/alipay.png'],
+    ['name' => '微信支付', 'icon' => 'images/uploads/icons/wechat.png'],
+    ['name' => '银联云闪付', 'icon' => 'images/uploads/icons/unionpay.png'],
     ['key' => 'payment_method_credit_card', 'icon' => 'images/uploads/icons/creditcard.png'],
     ['key' => 'payment_method_bank_transfer', 'icon' => 'images/uploads/icons/banktransfer.png'],
+    ['name' => '花呗', 'icon' => 'images/uploads/icons/alipay.png'],
+    ['name' => '京东白条', 'icon' => 'images/uploads/icons/creditcard.png'],
+    ['name' => '虚拟信用卡', 'icon' => 'images/uploads/icons/creditcard.png'],
     ['key' => 'payment_method_direct_debit', 'icon' => 'images/uploads/icons/directdebit.png'],
     ['key' => 'payment_method_money', 'icon' => 'images/uploads/icons/money.png'],
-    ['name' => 'Google Pay', 'icon' => 'images/uploads/icons/googlepay.png'],
-    ['name' => 'Samsung Pay', 'icon' => 'images/uploads/icons/samsungpay.png'],
+    // 海外订阅仍可能用到，保留在列表末尾
+    ['name' => 'PayPal', 'icon' => 'images/uploads/icons/paypal.png'],
     ['name' => 'Apple Pay', 'icon' => 'images/uploads/icons/applepay.png'],
-    ['name' => 'Crypto', 'icon' => 'images/uploads/icons/crypto.png'],
-    ['name' => 'Klarna', 'icon' => 'images/uploads/icons/klarna.png'],
-    ['name' => 'Amazon Pay', 'icon' => 'images/uploads/icons/amazonpay.png'],
-    ['name' => 'SEPA', 'icon' => 'images/uploads/icons/sepa.png'],
-    ['name' => 'Skrill', 'icon' => 'images/uploads/icons/skrill.png'],
-    ['name' => 'Sofort', 'icon' => 'images/uploads/icons/sofort.png'],
-    ['name' => 'Stripe', 'icon' => 'images/uploads/icons/stripe.png'],
-    ['name' => 'Affirm', 'icon' => 'images/uploads/icons/affirm.png'],
-    ['name' => 'AliPay', 'icon' => 'images/uploads/icons/alipay.png'],
-    ['name' => 'Elo', 'icon' => 'images/uploads/icons/elo.png'],
-    ['name' => 'Facebook Pay', 'icon' => 'images/uploads/icons/facebookpay.png'],
-    ['name' => 'GiroPay', 'icon' => 'images/uploads/icons/giropay.png'],
-    ['name' => 'iDeal', 'icon' => 'images/uploads/icons/ideal.png'],
-    ['name' => 'Union Pay', 'icon' => 'images/uploads/icons/unionpay.png'],
-    ['name' => 'Interac', 'icon' => 'images/uploads/icons/interac.png'],
-    ['name' => 'WeChat', 'icon' => 'images/uploads/icons/wechat.png'],
-    ['name' => 'Paysafe', 'icon' => 'images/uploads/icons/paysafe.png'],
-    ['name' => 'Poli', 'icon' => 'images/uploads/icons/poli.png'],
-    ['name' => 'Qiwi', 'icon' => 'images/uploads/icons/qiwi.png'],
-    ['name' => 'ShopPay', 'icon' => 'images/uploads/icons/shoppay.png'],
-    ['name' => 'Venmo', 'icon' => 'images/uploads/icons/venmo.png'],
-    ['name' => 'VeriFone', 'icon' => 'images/uploads/icons/verifone.png'],
-    ['name' => 'WebMoney', 'icon' => 'images/uploads/icons/webmoney.png'],
+    ['name' => 'Google Pay', 'icon' => 'images/uploads/icons/googlepay.png'],
+];
+
+/**
+ * The currencies a new account starts with, in display order.
+ *
+ * [CN-PATCH 12] Chinese-market default: eleven currencies, CNY first. Upstream
+ * seeded thirty-four, starting with the Euro, which meant a registration form
+ * with no preselected option handed a Chinese user a Euro-denominated account.
+ *
+ * 'name' is the English name; the localized name is resolved at account creation
+ * via translate('currency_' . strtolower($code)), falling back to this name when
+ * the language file has no key for it.
+ *
+ * [CN-PATCH 14] There is deliberately no 'id' here, and this is the fix for a
+ * bug the previous version caused.
+ *
+ * The currencies table has `id INTEGER PRIMARY KEY AUTOINCREMENT`, so the row id
+ * is assigned by insertion order, not by anything the caller asks for. The
+ * previous version carried upstream's row ids (CNY => 20, USD => 2, ...) because
+ * upstream's own seed happens to insert all thirty-four in that same order, so
+ * the numbers lined up. Shortening the list to eleven broke the coincidence: the
+ * rows now get ids 1..11, but registration.php wrote user.main_currency = 20
+ * (the id it believed CNY had) into the user row. Nothing pointed at row 20, so
+ * calendar.php's `INNER JOIN currencies ON c.id = u.main_currency` matched no
+ * row, $row['code'] was null, and CurrencyFormatter::format() raised a
+ * TypeError - the two "NumberFormatter::formatCurrency(): Argument #2 must be of
+ * type string, null given" boxes on the calendar page.
+ *
+ * The id is not data this file can know: it belongs to the database. Callers
+ * that need it must look it up by ISO code after inserting the rows - which is
+ * what the 'Retrieve main currency id' step in registration.php already does.
+ * What this constant supplies is the identifier that is stable across
+ * installations: the ISO code.
+ *
+ * @var array<int, array{name: string, symbol: string, code: string}>
+ */
+const DEFAULT_CURRENCIES = [
+    ['name' => 'Chinese Yuan', 'symbol' => '¥', 'code' => 'CNY'],
+    ['name' => 'US Dollar', 'symbol' => '$', 'code' => 'USD'],
+    ['name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'code' => 'HKD'],
+    ['name' => 'Japanese Yen', 'symbol' => '¥', 'code' => 'JPY'],
+    ['name' => 'Euro', 'symbol' => '€', 'code' => 'EUR'],
+    ['name' => 'British Pound Sterling', 'symbol' => '£', 'code' => 'GBP'],
+    ['name' => 'New Taiwan Dollar', 'symbol' => 'NT$', 'code' => 'TWD'],
+    ['name' => 'Singapore Dollar', 'symbol' => 'S$', 'code' => 'SGD'],
+    ['name' => 'South Korean Won', 'symbol' => '₩', 'code' => 'KRW'],
+    ['name' => 'Australian Dollar', 'symbol' => '$', 'code' => 'AUD'],
+    ['name' => 'Canadian Dollar', 'symbol' => '$', 'code' => 'CAD'],
 ];
 
 /**
@@ -184,6 +237,33 @@ function default_payment_methods($language)
     }
 
     return $methods;
+}
+
+/**
+ * The default currencies for one language, with localized names.
+ *
+ * [CN-PATCH 12] Mirrors default_categories() / default_payment_methods():
+ * resolves at the moment the account is created, stores plain text, never
+ * re-translates later.
+ *
+ * [CN-PATCH 14] The returned rows carry no 'id' - see the note on
+ * DEFAULT_CURRENCIES. Callers that need the row id look it up by code.
+ *
+ * @param string $language
+ * @return array<int, array{name: string, symbol: string, code: string}>
+ */
+function default_currencies($language)
+{
+    $translations = default_names_translations($language);
+
+    $currencies = [];
+    foreach (DEFAULT_CURRENCIES as $currency) {
+        $key = 'currency_' . strtolower($currency['code']);
+        $currency['name'] = $translations[$key] ?? $currency['name'];
+        $currencies[] = $currency;
+    }
+
+    return $currencies;
 }
 
 /**

@@ -562,6 +562,30 @@ $i18n = [
     "payment_method_bank_transfer" => "银行转账",
     "payment_method_direct_debit" => "直接扣款",
     "payment_method_money" => "现金",
+
+    // [CN-PATCH 5] 姓/名合并为「昵称」后的标签。
+    // firstname/lastname 两个键保留不动，因为上游的家庭成员、
+    // 通知模板等别处可能仍在使用。
+    "nickname" => "昵称",
+    "nickname_placeholder" => "用于首页问候，可留空",
+
+    // [CN-PATCH 6] 货币显示名。
+    //
+    // 上游 currencies 表里存的是英文全名（"Chinese Yuan" / "US Dollar"），
+    // 「设置 → 货币」页把 name 当普通文本编辑框直接展示，所以表里存英文的话
+    // 那里看到的仍是英文。这里提供中文短名，注册期写入数据库时使用。
+    // key 是 currency_ + 小写 ISO 代码；表里没有对应键时回退英文原名。
+    "currency_cny" => "人民币",
+    "currency_usd" => "美元",
+    "currency_eur" => "欧元",
+    "currency_hkd" => "港币",
+    "currency_jpy" => "日元",
+    "currency_gbp" => "英镑",
+    "currency_twd" => "新台币",
+    "currency_sgd" => "新加坡元",
+    "currency_krw" => "韩元",
+    "currency_aud" => "澳元",
+    "currency_cad" => "加元",
 ];
 
 ?>

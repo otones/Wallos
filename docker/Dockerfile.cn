@@ -1,0 +1,132 @@
+# syntax=docker/dockerfile:1
+#
+# [CN-PATCH 10] 中文化覆盖镜像。
+#
+# 设计意图：不重新构建整个应用，而是以官方镜像为底座，只覆盖我们改过的文件。
+#
+# 为什么不用仓库根目录那个 Dockerfile：
+#   它 FROM php:8.3-fpm-alpine 然后 apk add 一堆扩展，一次构建十几分钟，
+#   而且每次上游发版都要重跑全部编译。中文化改造只动 PHP/JS 文件，
+#   用覆盖方式构建只要几秒，且上游的安全修复、依赖升级全部自动继承。
+#
+# 为什么 COPY 逐个文件而不是 COPY 整个目录：
+#   COPY 整个目录会用我们 v5.8.3 的旧文件覆盖掉新版镜像里所有更新过的文件，
+#   上游的 bug 修复会静默丢失。逐个列举后，如果上游改了某个我们也在改的文件，
+#   冲突会在 `git merge upstream/main` 时暴露出来（可解决），
+#   而不是在构建时被无声覆盖。
+#
+# 升级流程：
+#   1. 改下面这行的版本号
+#   2. git merge upstream/main 并解决冲突
+#   3. docker compose build && docker compose up -d
+#
+# 版本基线与我们的补丁对应关系见 CN-PATCHES.md。
+
+FROM bellamy/wallos:5.10.0
+
+# ---- CN-PATCH 1 / 5 / 6：翻译键、昵称、货币名 ----------------------------
+COPY includes/i18n/zh_cn.php     /var/www/html/includes/i18n/zh_cn.php
+COPY includes/i18n/en.php        /var/www/html/includes/i18n/en.php
+COPY includes/i18n/getlang.php   /var/www/html/includes/i18n/getlang.php
+COPY includes/i18n/languages.php /var/www/html/includes/i18n/languages.php
+
+# ---- CN-PATCH 2 / 2b / 12：默认分类、支付方式、货币 ----------------------
+#
+# default_names.php 现在是分类、支付方式、货币三者的单一来源，
+# 下面四个建号入口全部依赖它，任何一处漏更新都会造成数据不一致。
+COPY includes/default_names.php            /var/www/html/includes/default_names.php
+COPY endpoints/cronjobs/createdatabase.php /var/www/html/endpoints/cronjobs/createdatabase.php
+
+# ---- CN-PATCH 12：四条建号路径 ------------------------------------------
+#
+# 上游在四个地方各写了一份货币数组，互不同步。改成统一读
+# DEFAULT_CURRENCIES 之后，这四处的源码都改了，**必须全部覆盖进镜像**，
+# 否则没被覆盖的那条路径仍然写入 34 种英文货币。
+#
+# 之前漏掉过 admin/adduser.php 和 includes/oidc/oidc_create_user.php，
+# 症状是「注册页正常、管理员后台加的用户是英文货币」。
+COPY registration.php                       /var/www/html/registration.php
+COPY endpoints/admin/adduser.php            /var/www/html/endpoints/admin/adduser.php
+COPY includes/oidc/oidc_create_user.php     /var/www/html/includes/oidc/oidc_create_user.php
+
+# ---- CN-PATCH 5：姓/名合并为昵称 ----------------------------------------
+COPY profile.php                     /var/www/html/profile.php
+COPY endpoints/user/save_user.php    /var/www/html/endpoints/user/save_user.php
+COPY scripts/registration.js         /var/www/html/scripts/registration.js
+
+# ---- CN-PATCH 7：中文日期格式 -------------------------------------------
+# 注意：scripts/subscription-details.js 在 v5.10.0 里**不需要再覆盖**。
+# 上游 4fdeeb0 "fix: use a valid locale in the subscription details popup"
+# 已经修掉了我们当初 CN-PATCH 7 的 JS 那一半（zh_cn 不是合法 BCP-47 标签），
+# 现在它用的是 detailsLocale()。覆盖成我们的旧版反而会退回问题状态。
+COPY includes/list_subscriptions.php     /var/www/html/includes/list_subscriptions.php
+COPY index.php                           /var/www/html/index.php
+
+# ---- CN-PATCH 9：品牌文案 -----------------------------------------------
+COPY includes/header.php  /var/www/html/includes/header.php
+COPY login.php            /var/www/html/login.php
+COPY passwordreset.php    /var/www/html/passwordreset.php
+COPY totp.php             /var/www/html/totp.php
+COPY verifyemail.php      /var/www/html/verifyemail.php
+COPY manifest.php         /var/www/html/manifest.php
+
+# ---- CN-PATCH 16：层叠层级修正 -------------------------------------------
+# 右上角用户菜单被「添加订阅」表单遮住：header 的 z-index 是 10，
+# 而 .subscription-form 是 20，整个 header 连菜单一起被压在下面。
+# 调整见 styles.css 里 body>header 上方的层级约定表。
+COPY styles/styles.css    /var/www/html/styles/styles.css
+
+# ---- CN-PATCH 8：存量数据迁移脚本（上游镜像里没有这个目录） -------------
+COPY tools/cn-seed.php              /var/www/html/tools/cn-seed.php
+# [CN-PATCH 14] 修复 user.main_currency 指向不存在的货币行
+COPY tools/fix-main-currency.php    /var/www/html/tools/fix-main-currency.php
+
+# ---- CN-PATCH 8：startup.sh 增加 cn-seed 调用 ---------------------------
+# 覆盖后必须重新赋予执行位，并且**必须去掉 CRLF 行尾**。
+#
+# 两个原因：
+#   1. Windows 上 git checkout 默认 core.autocrlf=true，脚本会带 CRLF。
+#      shebang 变成 "#!/bin/sh\r"，kernel 找不到 "/bin/sh\r"，
+#      容器启动直接 Permission denied / No such file，然后无限重启。
+#      .gitattributes 已经声明了 eol=lf，但构建上下文可能来自旧 checkout，
+#      也可能有人直接用 scp 传文件，所以在镜像里再兜一层。
+#   2. COPY 在 Windows 上不保留 unix 权限位，chmod +x 必须显式执行。
+COPY startup.sh /var/www/html/startup.sh
+RUN sed -i 's/\r$//' /var/www/html/startup.sh \
+ && chmod +x /var/www/html/startup.sh \
+ && head -1 /var/www/html/startup.sh | od -c | head -1
+
+# 让 docker 层面的健康检查在文件被替换后仍然有效（基镜像已定义，这里只是显式确认）
+HEALTHCHECK --interval=2m --timeout=5s --start-period=25s --retries=3 \
+    CMD ["curl", "-fsS", "http://127.0.0.1/health.php"]
+
+# ---- [CN-PATCH 13] 构建期自检：漏覆盖会在这里失败 -----------------------
+#
+# **必须放在所有 COPY 之后**，否则会误报（第一版放在 startup.sh 的 COPY
+# 之前，结果它自己报告 startup.sh 缺失）。
+#
+# 这份 COPY 清单是手工维护的，漏一个文件的后果是静默的 —— 镜像能构建、
+# 容器能启动，只有走那条特定代码路径的用户才会拿到错误数据。
+# 本次就漏过 endpoints/admin/adduser.php 和 includes/oidc/oidc_create_user.php，
+# 症状是「注册页正常、管理员后台加的用户是 34 种英文货币」。
+#
+# docker/expected-patches.txt 列出「仓库里所有带 CN-PATCH 标记的源文件」。
+# 构建时逐个比对该文件在镜像内是否仍带 CN-PATCH 标记：
+# 如果仓库里有补丁但没被 COPY 进来，镜像里就是上游原版，grep 不到标记，构建失败。
+COPY docker/expected-patches.txt /tmp/expected-patches.txt
+RUN missing=0; \
+    checked=0; \
+    while read -r f; do \
+        [ -z "$f" ] && continue; \
+        case "$f" in \#*) continue ;; esac; \
+        checked=$((checked + 1)); \
+        if ! grep -q 'CN-PATCH' "/var/www/html/$f" 2>/dev/null; then \
+            echo "MISSING PATCH: $f 未被 COPY 进镜像（或上游版本缺少该标记）"; \
+            missing=$((missing + 1)); \
+        fi; \
+    done < /tmp/expected-patches.txt; \
+    if [ "$missing" -gt 0 ]; then \
+        echo "构建中止：$missing / $checked 个 CN-PATCH 文件覆盖不完整，见上方列表"; \
+        exit 1; \
+    fi; \
+    echo "CN-PATCH 覆盖自检通过（$checked 个文件）"
